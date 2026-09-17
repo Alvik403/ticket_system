@@ -1,8 +1,3 @@
-const IPV4_ORIGIN =
-  /^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/;
-const LOCAL_ORIGIN =
-  /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/;
-
 export function parseOriginList(...values: Array<string | undefined>): string[] {
   return values
     .flatMap((value) => (value ?? '').split(','))
@@ -10,12 +5,23 @@ export function parseOriginList(...values: Array<string | undefined>): string[] 
     .filter(Boolean);
 }
 
+export function isHttpOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.origin === origin
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isAllowedBrowserOrigin(
   origin: string | undefined,
-  options: { allowedOrigins: string[]; allowLocalAndIp: boolean },
+  options: { allowedOrigins: string[]; allowAnyHttpOrigin: boolean },
 ): boolean {
   if (!origin) return true;
   if (options.allowedOrigins.includes(origin)) return true;
-  if (!options.allowLocalAndIp) return false;
-  return LOCAL_ORIGIN.test(origin) || IPV4_ORIGIN.test(origin);
+  return options.allowAnyHttpOrigin && isHttpOrigin(origin);
 }

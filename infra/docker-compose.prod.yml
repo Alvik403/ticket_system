@@ -13,7 +13,7 @@ services:
       api:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   api:
@@ -24,28 +24,30 @@ services:
       NODE_ENV: production
       PORT: 3000
       DB_SYNCHRONIZE: "false"
-      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       ENABLE_OPENAPI: "false"
-      ALLOW_LOCALHOST_CORS: "false"
-      CLIENT_ORIGIN: ${CLIENT_ORIGIN}
-      STAFF_ORIGIN: ${STAFF_ORIGIN}
+      ALLOW_LOCALHOST_CORS: ${ALLOW_LOCALHOST_CORS:-true}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-}
+      STAFF_ORIGIN: ${STAFF_ORIGIN:-}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
       DATABASE_URL: postgresql://ticket:${POSTGRES_PASSWORD}@postgres:5432/ticket
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       SESSION_SECRET: ${SESSION_SECRET}
-      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:18080/realms/ticket-system}
       OIDC_INTERNAL_ISSUER: http://keycloak:8080/realms/ticket-system
       OIDC_CLIENT_ID: ticket-staff
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
-      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL}
-      STAFF_APP_URL: ${STAFF_APP_URL}
+      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:18080/api/auth/callback}
+      STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:18080/staff/}
       RETENTION_TICKET_DAYS: ${RETENTION_TICKET_DAYS:-90}
       RETENTION_AUDIT_DAYS: ${RETENTION_AUDIT_DAYS:-365}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -79,6 +81,11 @@ services:
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.3
@@ -87,12 +94,38 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
       KC_HTTP_ENABLED: "true"
-      KC_PROXY_HEADERS: xforwarded
-      KC_HOSTNAME: ${KC_HOSTNAME}
+      KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
       - ./keycloak-theme/ticket:/opt/keycloak/themes/ticket:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "java",
+          "/opt/keycloak/data/import/HealthCheck.java",
+          "http://127.0.0.1:8080/realms/ticket-system",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
+
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.3
+    entrypoint: ["/bin/bash", "/opt/keycloak/data/import/ensure-redirects.sh"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    restart: on-failure
 
 volumes:
   postgres-data:

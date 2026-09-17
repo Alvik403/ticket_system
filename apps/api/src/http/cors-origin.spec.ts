@@ -11,42 +11,45 @@ describe('isAllowedBrowserOrigin', () => {
 
   it('allows missing origin and configured hosts', () => {
     expect(
-      isAllowedBrowserOrigin(undefined, { allowedOrigins, allowLocalAndIp: false }),
+      isAllowedBrowserOrigin(undefined, {
+        allowedOrigins,
+        allowAnyHttpOrigin: false,
+      }),
     ).toBe(true);
     expect(
       isAllowedBrowserOrigin('http://localhost:18080', {
         allowedOrigins,
-        allowLocalAndIp: false,
+        allowAnyHttpOrigin: false,
       }),
     ).toBe(true);
   });
 
-  it('rejects unknown hosts unless local/IP mode is on', () => {
+  it('allows any http origin in LAN deploy mode', () => {
     expect(
-      isAllowedBrowserOrigin('http://185.65.201.198:18080', {
+      isAllowedBrowserOrigin('http://queue.example:18080', {
         allowedOrigins,
-        allowLocalAndIp: false,
+        allowAnyHttpOrigin: false,
       }),
     ).toBe(false);
     expect(
-      isAllowedBrowserOrigin('http://185.65.201.198:18080', {
+      isAllowedBrowserOrigin('http://queue.example:18080', {
         allowedOrigins,
-        allowLocalAndIp: true,
+        allowAnyHttpOrigin: true,
       }),
     ).toBe(true);
     expect(
-      isAllowedBrowserOrigin('http://185.65.201.198', {
+      isAllowedBrowserOrigin('http://desk-2.example:18080', {
         allowedOrigins,
-        allowLocalAndIp: true,
+        allowAnyHttpOrigin: true,
       }),
     ).toBe(true);
   });
 
-  it('does not treat arbitrary hostnames as LAN', () => {
+  it('rejects non-http origins even in LAN deploy mode', () => {
     expect(
-      isAllowedBrowserOrigin('https://evil.example', {
+      isAllowedBrowserOrigin('javascript:alert(1)', {
         allowedOrigins,
-        allowLocalAndIp: true,
+        allowAnyHttpOrigin: true,
       }),
     ).toBe(false);
   });

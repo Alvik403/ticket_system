@@ -5,8 +5,11 @@ import {
   ForbiddenException,
   Get,
   Injectable,
+  Logger,
+  OnModuleInit,
   Req,
   Res,
+  ServiceUnavailableException,
   SetMetadata,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -36,6 +39,11 @@ import {
 } from '../http/public-origin';
 import { decodeJwtPayload, extractApplicationRoles } from './auth.utils';
 import { tokensEqual } from './csrf';
+import {
+  browserIssuer,
+  fetchOidcMetadata,
+  rewriteInternalEndpoints,
+} from './oidc-discovery';
 
 function saveSession(request: Request): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -149,23 +157,24 @@ export class PublicCsrfGuard implements CanActivate {
 }
 
 @Injectable()
-export class OidcService {
-  private configuration?: Promise<Configuration>;
+export class OidcService implements OnModuleInit {
+  private readonly logger = new Logger(OidcService.name);
+  private metadataPromise?: Promise<ServerMetadata>;
 
   constructor(private readonly config: ConfigService) {}
 
-  getConfiguration(): Promise<Configuration> {
-    if (!this.configuration) {
-      this.configuration = this.createConfiguration();
-    }
-    return this.configuration;
+  onModuleInit(): void {
+    void this.getDiscoveredMetadata().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`OIDC discovery not ready yet: ${message}`);
+    });
   }
 
-  private async createConfiguration(): Promise<Configuration> {
-    const issuer = this.config.getOrThrow<string>('OIDC_ISSUER');
-    const internalIssuer = this.config.get<string>('OIDC_INTERNAL_ISSUER');
+  async getConfiguration(publicOrigin: string): Promise<Configuration> {
     const clientId = this.config.getOrThrow<string>('OIDC_CLIENT_ID');
     const clientSecret = this.config.getOrThrow<string>('OIDC_CLIENT_SECRET');
+    const issuer = browserIssuer(publicOrigin);
+    const internalIssuer = this.config.get<string>('OIDC_INTERNAL_ISSUER');
     if (!internalIssuer) {
       return discovery(
         new URL(issuer),
@@ -178,33 +187,36 @@ export class OidcService {
       );
     }
 
-    const response = await fetch(
-      `${internalIssuer}/.well-known/openid-configuration`,
-    );
-    if (!response.ok) throw new Error('OIDC discovery failed');
-    const discovered = (await response.json()) as ServerMetadata;
-    const internalOrigin = new URL(internalIssuer).origin;
-    const rewrite = (endpoint?: string): string | undefined => {
-      if (!endpoint) return undefined;
-      const url = new URL(endpoint);
-      return `${internalOrigin}${url.pathname}${url.search}`;
-    };
+    const discovered = await this.getDiscoveredMetadata();
     const metadata: ServerMetadata = {
       ...discovered,
+      ...rewriteInternalEndpoints(discovered, internalIssuer),
       issuer,
       authorization_endpoint: `${issuer}/protocol/openid-connect/auth`,
       end_session_endpoint: `${issuer}/protocol/openid-connect/logout`,
-      token_endpoint: rewrite(discovered.token_endpoint),
-      jwks_uri: rewrite(discovered.jwks_uri),
-      userinfo_endpoint: rewrite(discovered.userinfo_endpoint),
-      introspection_endpoint: rewrite(discovered.introspection_endpoint),
-      revocation_endpoint: rewrite(discovered.revocation_endpoint),
     };
     const configuration = new Configuration(metadata, clientId, clientSecret);
     if (issuer.startsWith('http://') || internalIssuer.startsWith('http://')) {
       allowInsecureRequests(configuration);
     }
     return configuration;
+  }
+
+  private getDiscoveredMetadata(): Promise<ServerMetadata> {
+    if (!this.metadataPromise) {
+      this.metadataPromise = this.loadMetadata().catch((error: unknown) => {
+        this.metadataPromise = undefined;
+        throw error;
+      });
+    }
+    return this.metadataPromise;
+  }
+
+  private loadMetadata(): Promise<ServerMetadata> {
+    const issuer = this.config.getOrThrow<string>('OIDC_ISSUER');
+    const internalIssuer = this.config.get<string>('OIDC_INTERNAL_ISSUER');
+    const wellKnown = `${internalIssuer ?? issuer}/.well-known/openid-configuration`;
+    return fetchOidcMetadata(wellKnown, { attempts: 20, delayMs: 2000 });
   }
 }
 
@@ -224,6 +236,14 @@ export class AuthController {
     }
   }
 
+  private async oidcConfiguration(origin: string): Promise<Configuration> {
+    try {
+      return await this.oidc.getConfiguration(origin);
+    } catch {
+      throw new ServiceUnavailableException('Сервис входа временно недоступен');
+    }
+  }
+
   @Get('login')
   async login(
     @Req() request: Request,
@@ -236,7 +256,7 @@ export class AuthController {
     const nonce = randomNonce();
     request.session.oidc = { verifier, state, nonce, redirectUri };
     await saveSession(request);
-    const configuration = await this.oidc.getConfiguration();
+    const configuration = await this.oidcConfiguration(origin);
     const url = buildAuthorizationUrl(configuration, {
       redirect_uri: redirectUri,
       scope: 'openid profile email',
@@ -260,7 +280,7 @@ export class AuthController {
       `${origin}${request.originalUrl.startsWith('/') ? '' : '/'}${request.originalUrl}`,
     );
     const tokens = await authorizationCodeGrant(
-      await this.oidc.getConfiguration(),
+      await this.oidcConfiguration(origin),
       callbackUrl,
       {
         pkceCodeVerifier: pending.verifier,
@@ -271,7 +291,7 @@ export class AuthController {
     const claims = tokens.claims();
     if (!claims?.sub)
       throw new UnauthorizedException('Не удалось определить пользователя');
-    const configuration = await this.oidc.getConfiguration();
+    const configuration = await this.oidcConfiguration(origin);
     const roles = await resolveApplicationRoles(configuration, tokens, claims);
     if (!roles.length)
       throw new ForbiddenException('Нет роли для доступа к системе');
@@ -350,7 +370,7 @@ export class AuthController {
     });
 
     try {
-      const configuration = await this.oidc.getConfiguration();
+      const configuration = await this.oidcConfiguration(origin);
       const logoutUrl = buildEndSessionUrl(configuration, {
         ...(idToken ? { id_token_hint: idToken } : {}),
         post_logout_redirect_uri: staffUrl,

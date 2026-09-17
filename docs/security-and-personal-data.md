@@ -46,7 +46,8 @@
 
 - TLS 1.2+, HSTS на ingress, private network для БД/Redis/Keycloak, deny-by-default.
 - Прод-контур: `infra/docker-compose.prod.yml` — без publish портов БД/Redis,
-  без `/admin/` и `/api/docs`, `DB_SYNCHRONIZE=false`, `COOKIE_SECURE=true`.
+  без `/admin/` и `/api/docs`, `DB_SYNCHRONIZE=false`. `COOKIE_SECURE=true` только
+  при HTTPS.
 - KMS/secret manager, ротация секретов, шифрование дисков и backup.
 - OIDC, RBAC (`EMPLOYEE`, `ADMIN`, `AUDITOR`), обязательный TOTP для
   администраторов, отзыв сессий, rate limiting.

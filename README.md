@@ -64,7 +64,10 @@ docker compose -f infra/docker-compose.yml up --build -d
 ## Production
 
 - Использовать `infra/docker-compose.prod.yml`: без publish портов БД/Redis,
-  без Keycloak `/admin/` и OpenAPI, `DB_SYNCHRONIZE=false`, `COOKIE_SECURE=true`.
+  без Keycloak `/admin/` и OpenAPI, `DB_SYNCHRONIZE=false`.
+- Открывать систему по любому hostname/адресу сервера на порту `18080`;
+  login и CORS берут Host из запроса, отдельные URL в env не обязательны.
+- Для HTTPS задать `COOKIE_SECURE=true`. Для HTTP оставить `false`.
 - Задать `SESSION_SECRET`, `OIDC_CLIENT_SECRET`, `POSTGRES_PASSWORD`,
   `REDIS_PASSWORD`, `KC_BOOTSTRAP_ADMIN_PASSWORD` без значений по умолчанию.
 - Применять миграции (`npm run migration:run --workspace api` после `build`).

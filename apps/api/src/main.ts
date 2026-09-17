@@ -28,7 +28,7 @@ async function bootstrap() {
     config.getOrThrow<string>('STAFF_ORIGIN'),
     config.get('PUBLIC_ORIGIN'),
   );
-  const allowLocalAndIp =
+  const allowAnyHttpOrigin =
     config.get(
       'ALLOW_LOCALHOST_CORS',
       config.get('NODE_ENV') === 'production' ? 'false' : 'true',
@@ -40,7 +40,7 @@ async function bootstrap() {
     ) {
       callback(
         null,
-        isAllowedBrowserOrigin(origin, { allowedOrigins, allowLocalAndIp }),
+        isAllowedBrowserOrigin(origin, { allowedOrigins, allowAnyHttpOrigin }),
       );
     },
     credentials: true,
