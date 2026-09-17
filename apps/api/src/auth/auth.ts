@@ -29,8 +29,25 @@ import {
   type ServerMetadata,
 } from 'openid-client';
 import type { Role } from '../domain/entities';
+import {
+  originJoin,
+  requestPublicOrigin,
+  rewriteUrlOrigin,
+} from '../http/public-origin';
 import { decodeJwtPayload, extractApplicationRoles } from './auth.utils';
 import { tokensEqual } from './csrf';
+
+function saveSession(request: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    request.session.save((error) =>
+      error
+        ? reject(
+            error instanceof Error ? error : new Error('Session save failed'),
+          )
+        : resolve(),
+    );
+  });
+}
 
 async function resolveApplicationRoles(
   configuration: Configuration,
@@ -74,7 +91,12 @@ declare module 'express-session' {
     lookupCode?: string;
     csrfToken?: string;
     idToken?: string;
-    oidc?: { state: string; nonce: string; verifier: string };
+    oidc?: {
+      state: string;
+      nonce: string;
+      verifier: string;
+      redirectUri: string;
+    };
   }
 }
 
@@ -193,25 +215,37 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
+  private staffAppUrl(origin: string): string {
+    const configured = this.config.getOrThrow<string>('STAFF_APP_URL');
+    try {
+      return originJoin(origin, new URL(configured).pathname);
+    } catch {
+      return originJoin(origin, '/staff/');
+    }
+  }
+
   @Get('login')
   async login(
     @Req() request: Request,
     @Res() response: Response,
   ): Promise<void> {
+    const origin = requestPublicOrigin(request);
+    const redirectUri = originJoin(origin, '/api/auth/callback');
     const verifier = randomPKCECodeVerifier();
     const state = randomState();
     const nonce = randomNonce();
-    request.session.oidc = { verifier, state, nonce };
+    request.session.oidc = { verifier, state, nonce, redirectUri };
+    await saveSession(request);
     const configuration = await this.oidc.getConfiguration();
     const url = buildAuthorizationUrl(configuration, {
-      redirect_uri: this.config.getOrThrow<string>('OIDC_CALLBACK_URL'),
+      redirect_uri: redirectUri,
       scope: 'openid profile email',
       code_challenge: await calculatePKCECodeChallenge(verifier),
       code_challenge_method: 'S256',
       state,
       nonce,
     });
-    response.redirect(url.toString());
+    response.redirect(rewriteUrlOrigin(url.toString(), origin));
   }
 
   @Get('callback')
@@ -221,8 +255,9 @@ export class AuthController {
   ): Promise<void> {
     const pending = request.session.oidc;
     if (!pending) throw new UnauthorizedException('Сессия входа истекла');
+    const origin = requestPublicOrigin(request);
     const callbackUrl = new URL(
-      `${request.protocol}://${request.get('host')}${request.originalUrl}`,
+      `${origin}${request.originalUrl.startsWith('/') ? '' : '/'}${request.originalUrl}`,
     );
     const tokens = await authorizationCodeGrant(
       await this.oidc.getConfiguration(),
@@ -267,7 +302,7 @@ export class AuthController {
     }
     request.session.csrfToken = randomBytes(24).toString('base64url');
     delete request.session.oidc;
-    response.redirect(this.config.getOrThrow<string>('STAFF_APP_URL'));
+    response.redirect(this.staffAppUrl(origin));
   }
 
   @Get('me')
@@ -286,7 +321,8 @@ export class AuthController {
     @Req() request: Request,
     @Res() response: Response,
   ): Promise<void> {
-    const staffUrl = this.config.getOrThrow<string>('STAFF_APP_URL');
+    const origin = requestPublicOrigin(request);
+    const staffUrl = this.staffAppUrl(origin);
     const idToken = request.session.idToken;
     const secureCookies =
       this.config.get(
@@ -319,7 +355,7 @@ export class AuthController {
         ...(idToken ? { id_token_hint: idToken } : {}),
         post_logout_redirect_uri: staffUrl,
       });
-      response.redirect(logoutUrl.toString());
+      response.redirect(rewriteUrlOrigin(logoutUrl.toString(), origin));
       return;
     } catch {
       response.redirect(staffUrl);

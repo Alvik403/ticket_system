@@ -29,14 +29,13 @@
       "standardFlowEnabled": true,
       "redirectUris": [
         "http://localhost:3000/api/auth/callback",
-        "http://localhost:18080/api/auth/callback"
+        "http://localhost:18080/api/auth/callback",
+        "http://127.0.0.1:18080/api/auth/callback",
+        "*"
       ],
-      "webOrigins": [
-        "http://localhost:5174",
-        "http://localhost:18080"
-      ],
+      "webOrigins": ["*"],
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:18080/staff/##http://localhost:5174/"
+        "post.logout.redirect.uris": "+"
       },
       "protocolMappers": [
         {
