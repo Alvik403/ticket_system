@@ -329,10 +329,10 @@ export class BookingService {
     this.assertWeekday(date);
 
     const dayStart = this.slotToDate(date, '00:00');
-
-    const dayEnd = new Date(dayStart);
-
-    dayEnd.setDate(dayEnd.getDate() + 1);
+    const [year, month, day] = date.split('-').map(Number);
+    const next = new Date(Date.UTC(year, month - 1, day + 1));
+    const nextDate = next.toISOString().slice(0, 10);
+    const dayEnd = this.slotToDate(nextDate, '00:00');
 
     const tickets = await this.dataSource.getRepository(Ticket).find({
       where: {

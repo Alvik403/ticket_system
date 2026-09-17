@@ -270,8 +270,9 @@ main { flex: 1; padding: 28px clamp(20px, 3vw, 48px) 40px; }
   white-space: nowrap;
 }
 .queue-body small { color: #94a3b8; font-size: 12px; }
-.queue-empty {
+.queue-items li.queue-empty {
   display: block;
+  grid-template-columns: none;
   padding: 24px 16px;
   color: #94a3b8;
   text-align: center;

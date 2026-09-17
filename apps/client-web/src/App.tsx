@@ -141,6 +141,7 @@ function App() {
   const [schedule, setSchedule] = useState<ScheduleRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingSlots, setLoadingSlots] = useState(false)
+  const [loadingSchedule, setLoadingSchedule] = useState(false)
   const [error, setError] = useState('')
   const [consent, setConsent] = useState(false)
   const [honeypot, setHoneypot] = useState('')
@@ -243,10 +244,12 @@ function App() {
 
   useEffect(() => {
     if (tab !== 'schedule' || !siteId || !scheduleDate) return
+    setLoadingSchedule(true)
     fetch(`${API}/public/schedule?siteId=${siteId}&date=${scheduleDate}`)
       .then(async (response) => (response.ok ? response.json() : []))
       .then(setSchedule)
       .catch(() => setError('Не удалось загрузить очередь'))
+      .finally(() => setLoadingSchedule(false))
   }, [tab, siteId, scheduleDate])
 
   useEffect(() => {
@@ -632,7 +635,11 @@ function App() {
                       <strong>Китай</strong>
                     </button>
                   </div>
-                  <button disabled={!canNextStep2} onClick={() => setStep(2)}>Далее</button>
+                  <button disabled={!canNextStep2} onClick={() => {
+                    setLoadingSlots(true)
+                    setSlots([])
+                    setStep(2)
+                  }}>Далее</button>
                 </div>
               )}
 
@@ -843,7 +850,11 @@ function App() {
                   </div>
                 </li>
               ))}
-              {!schedule.length && <li className="schedule-empty">На этот день свободны все окна</li>}
+              {!schedule.length && (
+                <li className="schedule-empty">
+                  {loadingSchedule ? 'Загрузка…' : 'На этот день свободны все окна'}
+                </li>
+              )}
             </ul>
           </section>
         ) : (
