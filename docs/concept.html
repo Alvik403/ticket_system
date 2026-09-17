@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Электронная очередь — концепт проекта</title>
+  <style>
+    :root {
+      --bg: #edf4fc;
+      --surface: #ffffff;
+      --border: #d7e3f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #1e518c;
+      --accent-2: #2563a8;
+      --accent-soft: #e8f1fb;
+      --success: #15803d;
+      --warning: #b45309;
+      --danger: #b91c1c;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      --radius: 18px;
+      --font: Inter, system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent-2); }
+
+    .hero {
+      background: linear-gradient(135deg, #1e518c 0%, #2563a8 55%, #1d4ed8 100%);
+      color: #fff;
+      padding: 56px clamp(20px, 5vw, 64px) 72px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 85% 20%, rgba(255,255,255,.14) 0, transparent 40%),
+        radial-gradient(circle at 10% 80%, rgba(255,255,255,.08) 0, transparent 35%);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.14);
+      border: 1px solid rgba(255,255,255,.22);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .hero h1 {
+      margin: 18px 0 12px;
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      line-height: 1.15;
+      max-width: 14ch;
+    }
+
+    .hero-lead {
+      max-width: 62ch;
+      font-size: clamp(1rem, 2vw, 1.15rem);
+      opacity: .92;
+      margin: 0 0 28px;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-top: 32px;
+    }
+
+    .stat {
+      background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 14px;
+      padding: 16px 18px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.35rem;
+      margin-bottom: 4px;
+    }
+
+    .stat span { font-size: .9rem; opacity: .85; }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 10px clamp(20px, 5vw, 64px);
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .nav-inner::-webkit-scrollbar { display: none; }
+
+    .nav a {
+      white-space: nowrap;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+      padding: 8px 14px;
+      border-radius: 999px;
+    }
+
+    .nav a:hover { background: var(--accent-soft); color: var(--accent); }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px clamp(20px, 5vw, 64px) 80px;
+    }
+
+    section { margin-bottom: 56px; scroll-margin-top: 72px; }
+
+    .section-kicker {
+      color: var(--accent-2);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+    }
+
+    .lead { color: var(--muted); max-width: 70ch; margin: 0 0 24px; }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 18px;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+
+    .card p { margin: 0; color: var(--muted); font-size: .95rem; }
+
+    .icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 1.25rem;
+      margin-bottom: 12px;
+      background: var(--accent-soft);
+    }
+
+    .roles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 18px;
+    }
+
+    .role {
+      border-left: 4px solid var(--accent);
+      padding-left: 16px;
+    }
+
+    .role.admin { border-color: #7c3aed; }
+    .role.employee { border-color: #0891b2; }
+    .role.client { border-color: #16a34a; }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tag {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #334155;
+    }
+
+    .flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 16px;
+      position: relative;
+      padding-bottom: 24px;
+    }
+
+    .flow-step:not(:last-child)::before {
+      content: "";
+      position: absolute;
+      left: 23px;
+      top: 48px;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(var(--accent-soft), var(--border));
+    }
+
+    .flow-num {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .flow-body h4 { margin: 0 0 6px; }
+    .flow-body p { margin: 0; color: var(--muted); font-size: .95rem; }
+
+    .state-machine {
+      overflow-x: auto;
+      padding-bottom: 8px;
+    }
+
+    .states {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .state {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+    }
+
+    .state.active { background: #dcfce7; border-color: #86efac; color: #166534; }
+    .state.wait { background: #fef9c3; border-color: #fde047; color: #854d0e; }
+    .state.end { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+
+    .arrow { color: var(--muted); font-weight: 400; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .95rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+    }
+
+    .arch-diagram {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .arch-box {
+      text-align: center;
+      padding: 16px 12px;
+      border-radius: 14px;
+      border: 1px dashed var(--border);
+      background: #f8fafc;
+      font-size: .9rem;
+      font-weight: 700;
+    }
+
+    .arch-box.primary {
+      background: var(--accent-soft);
+      border-style: solid;
+      border-color: #93c5fd;
+      color: var(--accent);
+    }
+
+    .arch-connector {
+      text-align: center;
+      color: var(--muted);
+      font-size: 1.4rem;
+      line-height: 1;
+      padding: 4px 0;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 14px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .timeline-phase {
+      font-weight: 800;
+      color: var(--accent);
+      font-size: .9rem;
+    }
+
+    .checklist {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+
+    .checklist li { margin-bottom: 6px; }
+
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 32px clamp(20px, 5vw, 64px);
+      color: var(--muted);
+      font-size: .9rem;
+      text-align: center;
+    }
+
+    @media (max-width: 640px) {
+      .timeline-item { grid-template-columns: 1fr; }
+      .flow-step { grid-template-columns: 40px 1fr; }
+      .flow-num { width: 40px; height: 40px; font-size: .9rem; }
+      .flow-step:not(:last-child)::before { left: 19px; top: 40px; }
+    }
+
+    @media print {
+      .nav { display: none; }
+      .hero { padding: 32px 24px; }
+      .panel { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <span class="badge">Концепт · MVP · 2026</span>
+      <h1>Электронная очередь</h1>
+      <p class="hero-lead">
+        Цифровая система управления потоком посетителей на одной площадке.
+        Клиент получает талон по QR без регистрации, сотрудник автоматически
+        получает следующий совместимый талон, администратор управляет
+        каталогом услуг и аналитикой.
+      </p>
+      <div class="hero-stats">
+        <div class="stat">
+          <strong>1 площадка</strong>
+          <span>фокус MVP — одна точка обслуживания</span>
+        </div>
+        <div class="stat">
+          <strong>0 регистраций</strong>
+          <span>клиент заходит анонимно по QR-ссылке</span>
+        </div>
+        <div class="stat">
+          <strong>PostgreSQL</strong>
+          <span>единственный источник истины очереди</span>
+        </div>
+        <div class="stat">
+          <strong>OIDC + BFF</strong>
+          <span>сотрудники и админы через Keycloak</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#problem">Проблема</a>
+      <a href="#roles">Роли</a>
+      <a href="#flow">Сценарии</a>
+      <a href="#states">Состояния</a>
+      <a href="#architecture">Архитектура</a>
+      <a href="#security">Безопасность</a>
+      <a href="#metrics">Метрики</a>
+      <a href="#stack">Стек</a>
+      <a href="#roadmap">Дорожная карта</a>
+    </div>
+  </nav>
+
+  <main class="container">
+
+    <!-- Проблема и решение -->
+    <section id="problem">
+      <div class="section-kicker">Зачем</div>
+      <h2>Проблема и решение</h2>
+      <p class="lead">
+        Бумажные талоны и ручное распределение создают очереди, ошибки
+        назначения и отсутствие прозрачности. Электронная очередь
+        автоматизирует выдачу, назначение и учёт обслуживания.
+      </p>
+      <div class="grid-2">
+        <div class="panel card">
+          <div class="icon">⚠️</div>
+          <h3>Боль</h3>
+          <p>
+            Посетители не знают своё место в очереди. Сотрудники вручную
+            выбирают следующего клиента. Нет единой статистики по времени
+            ожидания и загрузке окон. При сбое теряется порядок обслуживания.
+          </p>
+        </div>
+        <div class="panel card">
+          <div class="icon">✅</div>
+          <h3>Решение</h3>
+          <p>
+            QR ведёт на публичный интерфейс. API выдаёт талон с секретом,
+            диспетчер назначает совместимый талон свободному сотруднику.
+            Все переходы фиксируются событиями. Администратор видит
+            операционные метрики и управляет каталогом.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Роли -->
+    <section id="roles">
+      <div class="section-kicker">Участники</div>
+      <h2>Роли и интерфейсы</h2>
+      <p class="lead">
+        Три типа пользователей работают через разные точки входа.
+        Решения о доступе принимает только серверный API.
+      </p>
+      <div class="roles">
+        <div class="panel role client">
+          <h3>Клиент (посетитель)</h3>
+          <p class="muted">
+            Анонимный пользователь. Сканирует QR на площадке, выбирает услугу,
+            получает номер талона и отслеживает статус на телефоне.
+          </p>
+          <ul class="tag-list">
+            <li class="tag">client-web</li>
+            <li class="tag">/api/public/*</li>
+            <li class="tag">без учётной записи</li>
+            <li class="tag">секрет талона в cookie</li>
+          </ul>
+        </div>
+        <div class="panel role employee">
+          <h3>Сотрудник (оператор)</h3>
+          <p class="muted">
+            Авторизуется через OIDC. Переключает статус «доступен / пауза».
+            Получает назначенный талон, вызывает клиента, начинает и завершает
+            обслуживание.
+          </p>
+          <ul class="tag-list">
+            <li class="tag">staff-web</li>
+            <li class="tag">/api/employee/*</li>
+            <li class="tag">роль EMPLOYEE</li>
+            <li class="tag">автоназначение</li>
+          </ul>
+        </div>
+        <div class="panel role admin">
+          <h3>Администратор</h3>
+          <p class="muted">
+            Тот же интерфейс сотрудника плюс права на каталог услуг,
+            отчёты, экспорт метрик, управление совместимостью и аудит
+            действий персонала.
+          </p>
+          <ul class="tag-list">
+            <li class="tag">staff-web</li>
+            <li class="tag">/api/admin/*</li>
+            <li class="tag">роль ADMIN</li>
+            <li class="tag">аудит экспорта</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Сценарии -->
+    <section id="flow">
+      <div class="section-kicker">Пользовательские сценарии</div>
+      <h2>Основной поток обслуживания</h2>
+      <p class="lead">
+        От сканирования QR до завершения визита — восемь шагов с
+        серверной валидацией на каждом переходе.
+      </p>
+      <div class="panel">
+        <div class="flow">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-body">
+              <h4>QR на площадке</h4>
+              <p>
+                Статический QR содержит только публичный код площадки
+                (<code>?site=MAIN</code>). Без секретов и персональных данных.
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-body">
+              <h4>Выдача талона</h4>
+              <p>
+                Клиент выбирает услугу. API генерирует 256-битный секрет,
+                сохраняет SHA-256, возвращает человекочитаемый номер (например, A-042).
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-body">
+              <h4>Ожидание в очереди</h4>
+              <p>
+                Талон в статусе <strong>WAITING</strong>. Клиент видит позицию
+                и текущий статус на экране телефона.
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">4</div>
+            <div class="flow-body">
+              <h4>Автоназначение</h4>
+              <p>
+                Свободный сотрудник (AVAILABLE) получает первый совместимый талон:
+                приоритет по убыванию, затем время создания. Блокировка
+                <code>FOR UPDATE SKIP LOCKED</code>.
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">5</div>
+            <div class="flow-body">
+              <h4>Вызов клиента</h4>
+              <p>
+                Сотрудник нажимает «Вызвать». Талон переходит в <strong>CALLED</strong>,
+                клиент видит номер окна.
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">6</div>
+            <div class="flow-body">
+              <h4>Начало обслуживания</h4>
+              <p>
+                Клиент подошёл — статус <strong>IN_SERVICE</strong>.
+                Сотрудник переходит в BUSY.
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">7</div>
+            <div class="flow-body">
+              <h4>Завершение</h4>
+              <p>
+                Обслуживание завершено — <strong>COMPLETED</strong>.
+                Сотрудник снова AVAILABLE, диспетчер назначает следующий талон.
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">8</div>
+            <div class="flow-body">
+              <h4>Исключения</h4>
+              <p>
+                Отмена (CANCELLED), неявка (NO_SHOW), переназначение
+                (возврат в WAITING) — каждое действие пишет неизменяемое событие.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Состояния -->
+    <section id="states">
+      <div class="section-kicker">Модель данных</div>
+      <h2>Машины состояний</h2>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Талон</h3>
+          <div class="state-machine">
+            <div class="states">
+              <span class="state wait">WAITING</span>
+              <span class="arrow">→</span>
+              <span class="state">ASSIGNED</span>
+              <span class="arrow">→</span>
+              <span class="state active">CALLED</span>
+              <span class="arrow">→</span>
+              <span class="state active">IN_SERVICE</span>
+              <span class="arrow">→</span>
+              <span class="state active">COMPLETED</span>
+            </div>
+          </div>
+          <p class="muted" style="margin-top:14px;font-size:.9rem;">
+            Из WAITING, ASSIGNED или CALLED — отмена. Из CALLED — NO_SHOW.
+            Переназначение возвращает талон в WAITING.
+          </p>
+        </div>
+        <div class="panel">
+          <h3>Сотрудник</h3>
+          <div class="state-machine">
+            <div class="states">
+              <span class="state">OFFLINE</span>
+              <span class="state active">AVAILABLE</span>
+              <span class="state">RESERVED</span>
+              <span class="state">BUSY</span>
+              <span class="state">PAUSED</span>
+            </div>
+          </div>
+          <p class="muted" style="margin-top:14px;font-size:.9rem;">
+            RESERVED и BUSY устанавливает сервер. OFFLINE, AVAILABLE и PAUSED
+            выбирает сотрудник при отсутствии активного назначения.
+          </p>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:18px;">
+        <h3>Инварианты целостности</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Правило</th>
+              <th>Механизм</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Один активный талон на сотрудника</td>
+              <td>Частичный уникальный индекс + транзакция</td>
+            </tr>
+            <tr>
+              <td>Один активный сотрудник на талон</td>
+              <td>Частичный уникальный индекс + транзакция</td>
+            </tr>
+            <tr>
+              <td>Конкурентное назначение</td>
+              <td><code>SELECT … FOR UPDATE SKIP LOCKED</code></td>
+            </tr>
+            <tr>
+              <td>Аудит всех переходов</td>
+              <td>Неизменяемая таблица TicketEvent</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Архитектура -->
+    <section id="architecture">
+      <div class="section-kicker">Техническая архитектура</div>
+      <h2>Компоненты системы</h2>
+      <p class="lead">
+        Монорепозиторий с разделением на публичный клиент, закрытый интерфейс
+        персонала и единый API-слой.
+      </p>
+
+      <div class="panel">
+        <div class="arch-diagram">
+          <div class="arch-box">📱 client-web<br><small>React · Vite</small></div>
+          <div class="arch-box">🖥️ staff-web<br><small>React · Vite</small></div>
+        </div>
+        <div class="arch-connector">↓ HTTPS</div>
+        <div class="arch-diagram">
+          <div class="arch-box primary">⚙️ api<br><small>NestJS · BFF · OIDC</small></div>
+        </div>
+        <div class="arch-connector">↓</div>
+        <div class="arch-diagram">
+          <div class="arch-box primary">🐘 PostgreSQL<br><small>очередь · события</small></div>
+          <div class="arch-box">🔴 Redis<br><small>сессии</small></div>
+          <div class="arch-box">🔐 Keycloak<br><small>OIDC · роли</small></div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:18px;">
+        <div class="panel card">
+          <h3>Граница доверия API</h3>
+          <table>
+            <tbody>
+              <tr><td><code>/api/public/*</code></td><td>секрет талона, без сессии</td></tr>
+              <tr><td><code>/api/employee/*</code></td><td>сессия + EMPLOYEE | ADMIN</td></tr>
+              <tr><td><code>/api/admin/*</code></td><td>сессия + ADMIN</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel card">
+          <h3>Отказоустойчивость</h3>
+          <p class="muted">
+            Redis можно восстановить — сотрудники войдут повторно, очередь
+            не теряется. PostgreSQL — единственный источник истины с PITR.
+            При потере связи UI перечитывает состояние с API.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Безопасность -->
+    <section id="security">
+      <div class="section-kicker">Compliance</div>
+      <h2>Безопасность и персональные данные</h2>
+      <div class="grid-3">
+        <div class="panel card">
+          <div class="icon">🔒</div>
+          <h3>Аутентификация</h3>
+          <p>
+            OIDC Authorization Code + PKCE на сервере. Токены не попадают
+            в localStorage. Сессии в Redis, cookie — только session id.
+          </p>
+        </div>
+        <div class="panel card">
+          <div class="icon">🎫</div>
+          <h3>Секрет талона</h3>
+          <p>
+            256-битный случайный секрет. В БД — только SHA-256.
+            QR не содержит секретов. Логи не пишут секрет, cookie и IP целиком.
+          </p>
+        </div>
+        <div class="panel card">
+          <div class="icon">🇷🇺</div>
+          <h3>Production</h3>
+          <p>
+            Размещение в РФ, TLS, MFA, WAF, rate limiting, миграции вместо
+            synchronize, шифрованные backup, централизованный аудит.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Метрики -->
+    <section id="metrics">
+      <div class="section-kicker">Аналитика</div>
+      <h2>Ключевые метрики</h2>
+      <div class="panel">
+        <table>
+          <thead>
+            <tr>
+              <th>Объект</th>
+              <th>Метрика</th>
+              <th>Формула / правило</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Талон</td>
+              <td>Время ожидания</td>
+              <td>IN_SERVICE − CREATED</td>
+            </tr>
+            <tr>
+              <td>Талон</td>
+              <td>Время обработки</td>
+              <td>COMPLETED − IN_SERVICE</td>
+            </tr>
+            <tr>
+              <td>Талон</td>
+              <td>Полный цикл</td>
+              <td>COMPLETED − CREATED</td>
+            </tr>
+            <tr>
+              <td>Сотрудник</td>
+              <td>SLA</td>
+              <td>Доля обслуживаний ≤ ServiceType.slaSeconds</td>
+            </tr>
+            <tr>
+              <td>Сотрудник</td>
+              <td>Типичное время</td>
+              <td>Медиана (p50) длительности обработки</td>
+            </tr>
+            <tr>
+              <td>Операции</td>
+              <td>Здоровье очереди</td>
+              <td>Число WAITING, возраст старейшего, зависшие ASSIGNED/CALLED</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="muted" style="margin:14px 0 0;font-size:.9rem;">
+          Персональные показатели сотрудников — только ADMIN, с аудитом при экспорте.
+          Все метки времени — UTC на сервере, отображение — в часовом поясе площадки.
+        </p>
+      </div>
+    </section>
+
+    <!-- Стек -->
+    <section id="stack">
+      <div class="section-kicker">Реализация</div>
+      <h2>Стек и репозиторий</h2>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Структура monorepo</h3>
+          <table>
+            <tbody>
+              <tr><td><code>apps/client-web</code></td><td>Публичный React-интерфейс</td></tr>
+              <tr><td><code>apps/staff-web</code></td><td>Интерфейс сотрудника и админа</td></tr>
+              <tr><td><code>apps/api</code></td><td>NestJS API, диспетчер, аудит</td></tr>
+              <tr><td><code>packages/contracts</code></td><td>Общие TypeScript-типы</td></tr>
+              <tr><td><code>infra</code></td><td>Docker, Keycloak, nginx, скрипты</td></tr>
+              <tr><td><code>docs</code></td><td>Архитектура, эксплуатация, угрозы</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>Локальный запуск</h3>
+          <p class="muted">Полный стек в Docker:</p>
+          <pre style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:12px;overflow-x:auto;font-size:.85rem;">docker compose -f infra/docker-compose.yml up --build -d</pre>
+          <ul class="checklist">
+            <li>Клиент: <code>http://localhost:18080/client/</code></li>
+            <li>Сотрудник: <code>http://localhost:18080/staff/</code></li>
+            <li>OpenAPI: <code>http://localhost:18080/api/docs</code></li>
+            <li>Keycloak: <code>http://localhost:18080/admin/</code></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Roadmap -->
+    <section id="roadmap">
+      <div class="section-kicker">Развитие</div>
+      <h2>Дорожная карта</h2>
+      <div class="panel">
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-phase">MVP ✓</div>
+            <div>
+              <strong>Одна площадка, базовый поток</strong>
+              <ul class="checklist">
+                <li>QR → талон → автоназначение → завершение</li>
+                <li>OIDC для персонала, публичный API для клиента</li>
+                <li>PostgreSQL + Redis + Keycloak в Docker</li>
+                <li>Базовые метрики и аудит событий</li>
+              </ul>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-phase">Пилот</div>
+            <div>
+              <strong>Подготовка к эксплуатации</strong>
+              <ul class="checklist">
+                <li>Миграции БД, отключение synchronize</li>
+                <li>Нагрузочное тестирование (k6, профиль площадки ×3)</li>
+                <li>MFA, замена демо-учёток, WAF и rate limiting</li>
+                <li>PITR backup, квартальная проверка восстановления</li>
+              </ul>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-phase">v2</div>
+            <div>
+              <strong>Расширение функциональности</strong>
+              <ul class="checklist">
+                <li>Idempotency key для внешних интеграций</li>
+                <li>Расчёт загрузки сотрудников по сменам</li>
+                <li>Информационные табло (TV-режим очереди)</li>
+                <li>Мультиплощадочность и федерация</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    Электронная очередь · Концепт проекта · CPZ · 2026<br>
+    Документ сформирован на основе README и docs/architecture.md репозитория ticket_system
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,5 @@
+services:
+  keycloak:
+    environment:
+      KC_HOSTNAME: http://localhost:58080
+

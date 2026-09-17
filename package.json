@@ -1,0 +1,26 @@
+{
+  "name": "ticket-system",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspace api",
+    "test:integration": "node test/integration/admin-auth.mjs && node test/integration/logout.mjs && node test/integration/dispatch.mjs",
+    "reset:data": "node infra/scripts/reset-data.mjs",
+    "seed:demo": "node infra/scripts/seed-demo.mjs",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:api": "npm run start:dev --workspace api",
+    "dev:client": "npm run dev --workspace client-web",
+    "dev:staff": "npm run dev --workspace staff-web"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@nestjs/platform-express": "^11.2.1"
+  }
+}

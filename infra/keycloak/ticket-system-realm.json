@@ -1,0 +1,146 @@
+{
+  "realm": "ticket-system",
+  "enabled": true,
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyLookAheadWindow": 1,
+  "otpPolicyPeriod": 30,
+  "loginTheme": "ticket",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["ru"],
+  "defaultLocale": "ru",
+  "roles": {
+    "realm": [
+      { "name": "EMPLOYEE" },
+      { "name": "ADMIN" },
+      { "name": "AUDITOR" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ticket-staff",
+      "name": "Ticket staff BFF",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "replace-in-production",
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/api/auth/callback",
+        "http://localhost:18080/api/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5174",
+        "http://localhost:18080"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:18080/staff/##http://localhost:5174/"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@example.com",
+      "firstName": "Админ",
+      "lastName": "Системы",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["ADMIN"]
+    },
+    {
+      "username": "rf1",
+      "enabled": true,
+      "email": "rf1@example.com",
+      "firstName": "Иван",
+      "lastName": "РФ-1",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Employee123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["EMPLOYEE"]
+    },
+    {
+      "username": "rf2",
+      "enabled": true,
+      "email": "rf2@example.com",
+      "firstName": "Пётр",
+      "lastName": "РФ-2",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Employee123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["EMPLOYEE"]
+    },
+    {
+      "username": "cn1",
+      "enabled": true,
+      "email": "cn1@example.com",
+      "firstName": "Ли",
+      "lastName": "Китай",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Employee123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["EMPLOYEE"]
+    },
+    {
+      "username": "auditor",
+      "enabled": true,
+      "email": "auditor@example.com",
+      "firstName": "Аудитор",
+      "lastName": "Системы",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Auditor123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["AUDITOR"]
+    }
+  ]
+}
