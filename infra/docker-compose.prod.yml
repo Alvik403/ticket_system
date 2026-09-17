@@ -29,6 +29,7 @@ services:
       ALLOW_LOCALHOST_CORS: "false"
       CLIENT_ORIGIN: ${CLIENT_ORIGIN}
       STAFF_ORIGIN: ${STAFF_ORIGIN}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
       DATABASE_URL: postgresql://ticket:${POSTGRES_PASSWORD}@postgres:5432/ticket
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       SESSION_SECRET: ${SESSION_SECRET}

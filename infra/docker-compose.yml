@@ -25,8 +25,9 @@ services:
       COOKIE_SECURE: "false"
       ENABLE_OPENAPI: "true"
       ALLOW_LOCALHOST_CORS: "true"
-      CLIENT_ORIGIN: http://localhost:18080,http://127.0.0.1:18080
-      STAFF_ORIGIN: http://localhost:18080,http://127.0.0.1:18080
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:18080,http://127.0.0.1:18080}
+      STAFF_ORIGIN: ${STAFF_ORIGIN:-http://localhost:18080,http://127.0.0.1:18080}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
       DATABASE_URL: postgresql://ticket:ticket@postgres:5432/ticket
       REDIS_URL: redis://redis:6379
       SESSION_SECRET: ${SESSION_SECRET:-local-docker-secret-change-before-use-1234}

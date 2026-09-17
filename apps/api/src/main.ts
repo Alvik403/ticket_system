@@ -9,6 +9,7 @@ import helmet from 'helmet';
 import { RedisStore } from 'connect-redis';
 import { createClient } from 'redis';
 import { AppModule } from './app.module';
+import { isAllowedBrowserOrigin, parseOriginList } from './http/cors-origin';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -22,13 +23,12 @@ async function bootstrap() {
   const express = app.getHttpAdapter().getInstance() as Express;
   express.set('trust proxy', 1);
   app.setGlobalPrefix('api');
-  const allowedOrigins = [
-    ...config.getOrThrow<string>('CLIENT_ORIGIN').split(','),
-    ...config.getOrThrow<string>('STAFF_ORIGIN').split(','),
-  ]
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const allowLocalhost =
+  const allowedOrigins = parseOriginList(
+    config.getOrThrow<string>('CLIENT_ORIGIN'),
+    config.getOrThrow<string>('STAFF_ORIGIN'),
+    config.get('PUBLIC_ORIGIN'),
+  );
+  const allowLocalAndIp =
     config.get(
       'ALLOW_LOCALHOST_CORS',
       config.get('NODE_ENV') === 'production' ? 'false' : 'true',
@@ -38,18 +38,10 @@ async function bootstrap() {
       origin: string | undefined,
       callback: (error: Error | null, allow?: boolean) => void,
     ) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
-      if (
-        allowLocalhost &&
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-      ) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error(`Origin ${origin} not allowed`), false);
+      callback(
+        null,
+        isAllowedBrowserOrigin(origin, { allowedOrigins, allowLocalAndIp }),
+      );
     },
     credentials: true,
   });
