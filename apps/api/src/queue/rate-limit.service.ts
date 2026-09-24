@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, type RedisClientType } from 'redis';
+import { redisConnectionUrl } from '../http/connection-urls';
 
 @Injectable()
 export class RateLimitService implements OnModuleInit, OnModuleDestroy {
@@ -16,7 +17,11 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     this.client = createClient({
-      url: this.config.getOrThrow<string>('REDIS_URL'),
+      url: redisConnectionUrl(
+        this.config.get<string>('REDIS_URL'),
+        this.config.get<string>('REDIS_PASSWORD'),
+        this.config.get<string>('REDIS_HOST'),
+      ),
     });
     await this.client.connect();
   }

@@ -13,6 +13,7 @@ import {
 } from './auth/auth';
 import { KeycloakAdminService } from './auth/keycloak-admin.service';
 import { AppThrottlerGuard } from './http/app-throttler.guard';
+import { postgresConnectionUrl } from './http/connection-urls';
 import { AddPersonalDataConsentAt1735689600000 } from './migrations/1735689600000-AddPersonalDataConsentAt';
 import { AddCheckInAndSlotHold1777900000000 } from './migrations/1777900000000-AddCheckInAndSlotHold';
 import { AddDepartureArrivalDates1778000000000 } from './migrations/1778000000000-AddDepartureArrivalDates';
@@ -50,7 +51,11 @@ import { RetentionService } from './queue/retention.service';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
-        url: config.getOrThrow<string>('DATABASE_URL'),
+        url: postgresConnectionUrl(
+          config.get<string>('DATABASE_URL'),
+          config.get<string>('POSTGRES_PASSWORD'),
+          config.get<string>('POSTGRES_HOST'),
+        ),
         entities: [
           Site,
           ServiceType,

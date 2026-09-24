@@ -63,20 +63,29 @@ docker compose -f infra/docker-compose.yml up --build -d
 
 ## Production
 
-- Использовать `infra/docker-compose.prod.yml`: без publish портов БД/Redis,
-  без Keycloak `/admin/` и OpenAPI, `DB_SYNCHRONIZE=false`.
-- Открывать систему по любому hostname/адресу сервера на порту `18080`;
-  login и CORS берут Host из запроса, отдельные URL в env не обязательны.
-- Для HTTPS задать `COOKIE_SECURE=true`. Для HTTP оставить `false`.
-- Задать `SESSION_SECRET`, `OIDC_CLIENT_SECRET`, `POSTGRES_PASSWORD`,
-  `REDIS_PASSWORD`, `KC_BOOTSTRAP_ADMIN_PASSWORD` без значений по умолчанию.
-- Применять миграции (`npm run migration:run --workspace api` после `build`).
-- Размещать приложение, OIDC, БД, журналы и резервные копии в РФ.
-- Использовать управляемые PostgreSQL/Redis/KMS, private network и TLS.
-- Заменить все демонстрационные секреты, включить TOTP для администраторов,
-  WAF/rate limiting, централизованный аудит, мониторинг и проверенное
-  восстановление из backup.
-- Завершить организационные действия из `docs/security-and-personal-data.md`.
+Минимум **2 ГБ RAM**, порт `18080`. Запуск только из корня репозитория,
+без `--project-directory`.
+
+```text
+git clone https://github.com/Alvik403/ticket_system.git
+cd ticket_system
+cp .env.example .env
+# заполнить POSTGRES_PASSWORD, REDIS_PASSWORD, SESSION_SECRET,
+# OIDC_CLIENT_SECRET=replace-in-production, KC_BOOTSTRAP_ADMIN_PASSWORD
+chmod +x infra/prod-up.sh
+sudo bash infra/prod-up.sh
+```
+
+- `infra/docker-compose.prod.yml`: БД/Redis не публикуются, OpenAPI выключен.
+- Схема БД создаётся TypeORM (`DB_SYNCHRONIZE=true`): отдельные CREATE-миграции
+  в этом MVP нет, только ALTER поверх уже существующей таблицы `ticket`.
+- Login и CORS берут Host из запроса; отдельные URL в env не обязательны.
+- HTTP: `COOKIE_SECURE=false`. HTTPS: `COOKIE_SECURE=true`.
+- Пароли без пробелов, `$` и `#`.
+- Keycloak после старта может быть `Waiting` 1–2 минуты.
+- Заменить демо-учётки, включить TOTP для администраторов, WAF,
+  мониторинг и backup. Организационные действия:
+  `docs/security-and-personal-data.md`.
 
 ## Проверки
 

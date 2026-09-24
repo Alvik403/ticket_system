@@ -9,12 +9,19 @@ import helmet from 'helmet';
 import { RedisStore } from 'connect-redis';
 import { createClient } from 'redis';
 import { AppModule } from './app.module';
+import { redisConnectionUrl } from './http/connection-urls';
 import { isAllowedBrowserOrigin, parseOriginList } from './http/cors-origin';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
-  const redis = createClient({ url: config.getOrThrow<string>('REDIS_URL') });
+  const redis = createClient({
+    url: redisConnectionUrl(
+      config.get<string>('REDIS_URL'),
+      config.get<string>('REDIS_PASSWORD'),
+      config.get<string>('REDIS_HOST'),
+    ),
+  });
   const redisLogger = new Logger('Redis');
   redis.on('error', (error: Error) =>
     redisLogger.error('Session store connection error', error),

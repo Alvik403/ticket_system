@@ -15,7 +15,8 @@
     "lint": "npm run lint --workspaces --if-present",
     "dev:api": "npm run start:dev --workspace api",
     "dev:client": "npm run dev --workspace client-web",
-    "dev:staff": "npm run dev --workspace staff-web"
+    "dev:staff": "npm run dev --workspace staff-web",
+    "prod:up": "bash infra/prod-up.sh"
   },
   "engines": {
     "node": ">=24"
