@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { BookingCalendar } from './BookingCalendar'
 import { countryLabel, ticketStatusLabel } from './labels'
 import './queue.css'
@@ -24,7 +24,7 @@ async function ensurePublicCsrf(): Promise<string> {
 }
 
 type Country = 'RF' | 'CN'
-type Tab = 'book' | 'find' | 'schedule' | 'privacy'
+type Tab = 'book' | 'find'
 type Ticket = {
   id?: string
   number: string
@@ -37,17 +37,13 @@ type Ticket = {
   durationMinutes?: number
   country?: Country
   fullName?: string
-  travelHistory?: string
+  departureDate?: string
+  arrivalDate?: string
   clientNotice?: string
   servedBy?: string
   lookupCode?: string
   canCheckIn?: boolean
   queuePosition?: number
-}
-type ScheduleRow = {
-  scheduledAt: string
-  durationMinutes: number
-  occupied: boolean
 }
 type Slot = { time: string; scheduledAt: string; available: boolean }
 type Hold = {
@@ -111,6 +107,19 @@ function formatScheduledDisplay(ticket: Ticket): string {
   return `${date} в ${time}`
 }
 
+function openDatePicker(event: MouseEvent<HTMLLabelElement>) {
+  const input = event.currentTarget.querySelector('input[type="date"]')
+  if (!(input instanceof HTMLInputElement)) return
+  input.focus()
+  if (typeof input.showPicker === 'function') {
+    try {
+      input.showPicker()
+    } catch {
+      input.click()
+    }
+  }
+}
+
 function ticketStatusClass(status: string): string {
   if (['BOOKED', 'WAITING'].includes(status)) return 'muted'
   if (['CHECKED_IN', 'REQUEUED', 'ASSIGNED'].includes(status)) return 'waiting'
@@ -135,15 +144,12 @@ function App() {
   const [lastName, setLastName] = useState('')
   const [firstName, setFirstName] = useState('')
   const [patronymic, setPatronymic] = useState('')
-  const [travelHistory, setTravelHistory] = useState('')
+  const [departureDate, setDepartureDate] = useState('')
+  const [arrivalDate, setArrivalDate] = useState('')
   const [ticket, setTicket] = useState<Ticket | null>(null)
-  const [scheduleDate, setScheduleDate] = useState('')
-  const [schedule, setSchedule] = useState<ScheduleRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingSlots, setLoadingSlots] = useState(false)
-  const [loadingSchedule, setLoadingSchedule] = useState(false)
   const [error, setError] = useState('')
-  const [consent, setConsent] = useState(false)
   const [honeypot, setHoneypot] = useState('')
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
   const [cancelLoading, setCancelLoading] = useState(false)
@@ -184,7 +190,6 @@ function App() {
 
         setSiteId(site.id)
         setDates(bookingDates)
-        setScheduleDate(bookingDates[0])
         setSelectedDate(bookingDates[0])
         if (service) setServiceTypeId(service)
 
@@ -243,16 +248,6 @@ function App() {
   }, [siteId, selectedDate, country, step, hold?.scheduledAt])
 
   useEffect(() => {
-    if (tab !== 'schedule' || !siteId || !scheduleDate) return
-    setLoadingSchedule(true)
-    fetch(`${API}/public/schedule?siteId=${siteId}&date=${scheduleDate}`)
-      .then(async (response) => (response.ok ? response.json() : []))
-      .then(setSchedule)
-      .catch(() => setError('Не удалось загрузить очередь'))
-      .finally(() => setLoadingSchedule(false))
-  }, [tab, siteId, scheduleDate])
-
-  useEffect(() => {
     if (!hold) {
       setHoldSeconds(0)
       return
@@ -287,8 +282,9 @@ function App() {
     lastName.trim().length >= 2 &&
     firstName.trim().length >= 2 &&
     (country === 'CN' || patronymic.trim().length >= 2) &&
-    travelHistory.trim().length >= 2 &&
-    consent &&
+    departureDate &&
+    arrivalDate &&
+    arrivalDate >= departureDate &&
     Boolean(hold)
 
   const availableCount = useMemo(
@@ -297,8 +293,8 @@ function App() {
   )
 
   const durationLabel = useMemo(() => {
-    if (country === 'RF') return '10 минут'
-    if (country === 'CN') return '20 минут'
+    if (country === 'RF') return '20 минут'
+    if (country === 'CN') return '30 минут'
     return ''
   }, [country])
 
@@ -362,7 +358,8 @@ function App() {
         serviceTypeId,
         country,
         fullName: fullName.trim(),
-        travelHistory: travelHistory.trim(),
+        departureDate,
+        arrivalDate,
         scheduledAt: selectedSlot.scheduledAt,
         holdId: hold.holdId,
         personalDataConsent: true,
@@ -465,8 +462,8 @@ function App() {
     setLastName('')
     setFirstName('')
     setPatronymic('')
-    setTravelHistory('')
-    setConsent(false)
+    setDepartureDate('')
+    setArrivalDate('')
   }
 
   function HoldTimer() {
@@ -498,12 +495,6 @@ function App() {
         </button>
         <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>
           Найти запись
-        </button>
-        <button className={tab === 'schedule' ? 'active' : ''} onClick={() => setTab('schedule')}>
-          Занятость
-        </button>
-        <button className={tab === 'privacy' ? 'active' : ''} onClick={() => setTab('privacy')}>
-          Персональные данные
         </button>
       </nav>
 
@@ -647,43 +638,45 @@ function App() {
                 <div className="step-body">
                   <h2>Выберите дату и время</h2>
                   <HoldTimer />
-                  <BookingCalendar
-                    availableDates={dates}
-                    value={selectedDate}
-                    onChange={(date) => {
-                      setSelectedDate(date)
-                      setSelectedSlot(null)
-                      setHold(null)
-                    }}
-                  />
-                  <div className="slot-section">
-                    {loadingSlots ? (
-                      <p className="muted">Загрузка времени…</p>
-                    ) : slots.length ? (
-                      <>
-                        <p className="slot-hint muted">
-                          Свободно: {availableCount} из {slots.length}
-                        </p>
-                        <div className="slot-grid">
-                          {slots.map((slot) => {
-                            const held = hold?.scheduledAt === slot.scheduledAt
-                            return (
-                              <button
-                                key={slot.scheduledAt}
-                                type="button"
-                                disabled={!slot.available && !held}
-                                className={`slot${!slot.available && !held ? ' unavailable' : ''}${held ? ' selected' : ''}`}
-                                onClick={() => void holdSelectedSlot(slot)}
-                              >
-                                {slot.time}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </>
-                    ) : (
-                      <p className="muted">На эту дату нет доступных интервалов</p>
-                    )}
+                  <div className="booking-datetime-layout">
+                    <BookingCalendar
+                      availableDates={dates}
+                      value={selectedDate}
+                      onChange={(date) => {
+                        setSelectedDate(date)
+                        setSelectedSlot(null)
+                        setHold(null)
+                      }}
+                    />
+                    <div className="slot-section">
+                      {loadingSlots ? (
+                        <p className="muted">Загрузка времени…</p>
+                      ) : slots.length ? (
+                        <>
+                          <p className="slot-hint muted">
+                            Свободно: {availableCount} из {slots.length}
+                          </p>
+                          <div className="slot-grid slot-grid-compact">
+                            {slots.map((slot) => {
+                              const held = hold?.scheduledAt === slot.scheduledAt
+                              return (
+                                <button
+                                  key={slot.scheduledAt}
+                                  type="button"
+                                  disabled={!slot.available && !held}
+                                  className={`slot${!slot.available && !held ? ' unavailable' : ''}${held ? ' selected' : ''}`}
+                                  onClick={() => void holdSelectedSlot(slot)}
+                                >
+                                  {slot.time}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="muted">На эту дату нет доступных интервалов</p>
+                      )}
+                    </div>
                   </div>
                   <div className="step-actions">
                     <button className="secondary" onClick={() => setStep(1)}>Назад</button>
@@ -725,29 +718,49 @@ function App() {
                       />
                     </label>
                   </div>
-                  <label>
-                    Поездки (куда ездили)
-                    <textarea
-                      rows={4}
-                      value={travelHistory}
-                      onChange={(event) => setTravelHistory(event.target.value)}
-                      placeholder="Укажите страны и даты поездок"
-                    />
-                  </label>
-                  <label className="consent">
-                    <input
-                      type="checkbox"
-                      checked={consent}
-                      onChange={(event) => setConsent(event.target.checked)}
-                    />
-                    <span>
-                      Даю согласие на обработку персональных данных (ФИО и сведения о поездках)
-                      для записи на приём. Срок хранения — 90 дней.{' '}
-                      <button type="button" className="link-button" onClick={() => setTab('privacy')}>
-                        Подробнее
-                      </button>
-                    </span>
-                  </label>
+                  <div className="travel-dates-row">
+                    <label className="date-field" onClick={openDatePicker}>
+                      Дата выезда
+                      <span className="date-field-input-wrap">
+                        <input
+                          type="date"
+                          value={departureDate}
+                          onChange={(event) => setDepartureDate(event.target.value)}
+                          onClick={(event) => {
+                            const input = event.currentTarget
+                            if (typeof input.showPicker === 'function') {
+                              try {
+                                input.showPicker()
+                              } catch {
+                                /* ignore */
+                              }
+                            }
+                          }}
+                        />
+                      </span>
+                    </label>
+                    <label className="date-field" onClick={openDatePicker}>
+                      Дата приезда
+                      <span className="date-field-input-wrap">
+                        <input
+                          type="date"
+                          value={arrivalDate}
+                          min={departureDate || undefined}
+                          onChange={(event) => setArrivalDate(event.target.value)}
+                          onClick={(event) => {
+                            const input = event.currentTarget
+                            if (typeof input.showPicker === 'function') {
+                              try {
+                                input.showPicker()
+                              } catch {
+                                /* ignore */
+                              }
+                            }
+                          }}
+                        />
+                      </span>
+                    </label>
+                  </div>
                   <label className="hp" aria-hidden="true">
                     Сайт
                     <input tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
@@ -771,7 +784,8 @@ function App() {
                     <div><dt>Фамилия</dt><dd>{lastName}</dd></div>
                     <div><dt>Имя</dt><dd>{firstName}</dd></div>
                     <div><dt>Отчество</dt><dd>{patronymic}</dd></div>
-                    <div><dt>Поездки</dt><dd>{travelHistory}</dd></div>
+                    <div><dt>Дата выезда</dt><dd>{departureDate || '—'}</dd></div>
+                    <div><dt>Дата приезда</dt><dd>{arrivalDate || '—'}</dd></div>
                   </dl>
                   <div className="step-actions">
                     <button className="secondary" onClick={() => setStep(3)}>Назад</button>
@@ -785,7 +799,7 @@ function App() {
           <section className="panel">
             <h2>Найти запись</h2>
             <p className="muted">
-              Введите номер талона и код восстановления с карточки записи.
+              Введите цифры номера талона и код восстановления с карточки записи.
             </p>
             <form
               className="lookup-form"
@@ -798,8 +812,13 @@ function App() {
                 Номер
                 <input
                   value={lookupNumber}
-                  onChange={(event) => setLookupNumber(event.target.value)}
-                  placeholder="MAIN-001"
+                  onChange={(event) =>
+                    setLookupNumber(event.target.value.replace(/\D/g, '').slice(0, 6))
+                  }
+                  placeholder="001"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
                   autoComplete="off"
                 />
               </label>
@@ -813,71 +832,12 @@ function App() {
                   autoComplete="off"
                 />
               </label>
-              <button type="submit" disabled={lookupLoading || lookupNumber.trim().length < 3 || lookupCode.trim().length !== 6}>
+              <button type="submit" disabled={lookupLoading || lookupNumber.length < 1 || lookupCode.trim().length !== 6}>
                 {lookupLoading ? 'Ищем…' : 'Открыть запись'}
               </button>
             </form>
           </section>
-        ) : tab === 'schedule' ? (
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Занятые окна</h2>
-              <label className="field-select field-select-inline">
-                <span className="sr-only">Дата</span>
-                <select
-                  className="select-control"
-                  value={scheduleDate}
-                  onChange={(event) => setScheduleDate(event.target.value)}
-                  disabled={!dates.length}
-                >
-                  {!dates.length ? (
-                    <option value="">Нет доступных дат</option>
-                  ) : (
-                    dates.map((date) => (
-                      <option key={date} value={date}>{formatDateLabel(date)}</option>
-                    ))
-                  )}
-                </select>
-              </label>
-            </div>
-            <ul className="schedule-list">
-              {schedule.map((row) => (
-                <li key={row.scheduledAt}>
-                  <span className="schedule-time">{formatTimeLabel(row.scheduledAt)}</span>
-                  <div className="schedule-body">
-                    <strong>Занято</strong>
-                    <span>{row.durationMinutes} мин</span>
-                  </div>
-                </li>
-              ))}
-              {!schedule.length && (
-                <li className="schedule-empty">
-                  {loadingSchedule ? 'Загрузка…' : 'На этот день свободны все окна'}
-                </li>
-              )}
-            </ul>
-          </section>
-        ) : (
-          <section className="panel">
-            <h2>Обработка персональных данных</h2>
-            <p className="muted">
-              Оператор обрабатывает ФИО и сведения о поездках только для записи на приём и
-              обслуживания в окне. Данные хранятся в Российской Федерации. Срок хранения
-              оперативных записей — 90 дней, журнала безопасности — 1 год.
-            </p>
-            <p className="muted">
-              Без согласия запись не создаётся. Доступ к полным сведениям есть у сотрудника,
-              который ведёт приём, и у администратора. Публичная страница показывает только
-              занятость слотов без ФИО и номеров талонов.
-            </p>
-            <p className="muted">
-              Документ носит информационно-технический характер и не заменяет локальные акты
-              оператора. Перед пилотом оператор утверждает политику и при необходимости
-              уведомляет Роскомнадзор.
-            </p>
-            <button className="secondary" onClick={() => setTab('book')}>К записи</button>
-          </section>
-        )}
+        ) : null}
 
         {ticket?.clientNotice && tab !== 'book' && (
           <div className="notice-banner floating-notice">{ticket.clientNotice}</div>

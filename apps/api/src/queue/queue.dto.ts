@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   MinLength,
   ValidateIf,
@@ -23,7 +24,9 @@ export class RefreshHoldDto {
 }
 
 export class LookupTicketDto {
-  @IsString() @MinLength(3) @MaxLength(40) number!: string;
+  @IsString()
+  @Matches(/^\d{1,8}$/, { message: 'Номер талона — только цифры' })
+  number!: string;
   @IsString() @MinLength(6) @MaxLength(6) lookupCode!: string;
 }
 
@@ -32,7 +35,8 @@ export class CreateTicketDto {
   @IsUUID() serviceTypeId!: string;
   @IsIn(['RF', 'CN']) country!: ClientCountry;
   @IsString() @MinLength(3) @MaxLength(200) fullName!: string;
-  @IsString() @MinLength(2) @MaxLength(2000) travelHistory!: string;
+  @IsDateString() departureDate!: string;
+  @IsDateString() arrivalDate!: string;
   @IsDateString() scheduledAt!: string;
   @IsString() @MinLength(8) @MaxLength(64) holdId!: string;
   @IsBoolean()
@@ -116,8 +120,48 @@ export class UpdateEmployeeCountryDto {
   country!: ClientCountry;
 }
 
+export class CreateManagerDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(40)
+  username!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  firstName!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  lastName!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  email?: string;
+}
+
 export class EmployeeSelfDeskDto {
   @ValidateIf((value: EmployeeSelfDeskDto) => value.deskId !== null)
   @IsUUID()
   deskId!: string | null;
+}
+
+export class SetTicketStatusDto {
+  @IsIn([
+    'BOOKED',
+    'CHECKED_IN',
+    'IN_SERVICE',
+    'COMPLETED',
+    'NO_SHOW',
+    'CANCELLED',
+  ])
+  status!:
+    | 'BOOKED'
+    | 'CHECKED_IN'
+    | 'IN_SERVICE'
+    | 'COMPLETED'
+    | 'NO_SHOW'
+    | 'CANCELLED';
 }

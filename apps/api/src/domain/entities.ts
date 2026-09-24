@@ -100,6 +100,8 @@ export class Ticket {
   @Column({ type: 'varchar', nullable: true }) country?: ClientCountry;
   @Column({ nullable: true }) fullName?: string;
   @Column({ type: 'text', nullable: true }) travelHistory?: string;
+  @Column({ type: 'date', nullable: true }) departureDate?: string;
+  @Column({ type: 'date', nullable: true }) arrivalDate?: string;
   @Column({ type: 'timestamptz', nullable: true }) personalDataConsentAt?: Date;
   @Column({ type: 'timestamptz', nullable: true }) scheduledAt?: Date;
   @Column({ type: 'timestamptz', nullable: true }) checkedInAt?: Date;

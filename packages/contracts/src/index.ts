@@ -26,7 +26,8 @@ export interface PublicTicket {
   deskLabel?: string;
   createdAt: string;
   fullName?: string;
-  travelHistory?: string;
+  departureDate?: string;
+  arrivalDate?: string;
   scheduledAt?: string;
   lookupCode?: string;
   canCheckIn?: boolean;
@@ -38,7 +39,8 @@ export interface CreateTicketRequest {
   serviceTypeId: string;
   country: 'RF' | 'CN';
   fullName: string;
-  travelHistory: string;
+  departureDate: string;
+  arrivalDate: string;
   scheduledAt: string;
   holdId: string;
   personalDataConsent: true;

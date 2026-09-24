@@ -1,0 +1,11 @@
+import { ExecutionContext, Injectable } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
+
+@Injectable()
+export class AppThrottlerGuard extends ThrottlerGuard {
+  protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<{ method?: string }>();
+    const method = request.method?.toUpperCase();
+    return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  }
+}

@@ -41,6 +41,9 @@ services:
       STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:18080/staff/}
       RETENTION_TICKET_DAYS: ${RETENTION_TICKET_DAYS:-90}
       RETENTION_AUDIT_DAYS: ${RETENTION_AUDIT_DAYS:-365}
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

@@ -25,9 +25,8 @@ export const WORKDAY_START_MINUTES = 8 * 60;
 export const WORKDAY_END_MINUTES = 17 * 60;
 
 export const SLOT_DURATION: Record<ClientCountry, number> = {
-  RF: 10,
-
-  CN: 20,
+  RF: 20,
+  CN: 30,
 };
 
 const ACTIVE_SLOT_STATUSES = SLOT_HOLDING_STATUSES;

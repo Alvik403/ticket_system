@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -21,8 +22,10 @@ import {
   Ticket,
   TicketEvent,
   type ClientCountry,
+  type TicketStatus,
 } from '../domain/entities';
 import type { SessionUser } from '../auth/auth';
+import { KeycloakAdminService } from '../auth/keycloak-admin.service';
 import {
   blocksBreak,
   canCancel,
@@ -44,6 +47,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     private readonly dataSource: DataSource,
     private readonly booking: BookingService,
     private readonly rateLimit: RateLimitService,
+    private readonly keycloakAdmin: KeycloakAdminService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -174,7 +178,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     serviceTypeId: string;
     country: ClientCountry;
     fullName: string;
-    travelHistory: string;
+    departureDate: string;
+    arrivalDate: string;
     scheduledAt: string;
     sessionId: string;
     holdId: string;
@@ -185,6 +190,13 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     const lookupCodeHash = this.hashToken(lookupCode);
     const scheduledAt = new Date(input.scheduledAt);
     const durationMinutes = this.booking.durationFor(input.country);
+    const departureDate = input.departureDate.trim();
+    const arrivalDate = input.arrivalDate.trim();
+    if (arrivalDate < departureDate) {
+      throw new BadRequestException(
+        'Дата приезда не может быть раньше даты выезда',
+      );
+    }
 
     return this.dataSource.transaction(async (manager) => {
       const site = await manager.findOneBy(Site, {
@@ -257,7 +269,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
             serviceType,
             country: input.country,
             fullName: input.fullName.trim(),
-            travelHistory: input.travelHistory.trim(),
+            departureDate,
+            arrivalDate,
             personalDataConsentAt: new Date(),
             scheduledAt,
             durationMinutes,
@@ -335,15 +348,24 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
 
   async lookupTicket(number: string, lookupCode: string) {
     const lookupCodeHash = this.hashToken(lookupCode.trim().toUpperCase());
-    const ticket = await this.dataSource.getRepository(Ticket).findOne({
-      where: { number: number.trim(), lookupCodeHash },
-      relations: {
-        serviceType: true,
-        site: true,
-        reservedDesk: true,
-        assignments: { desk: true, employee: true },
-      },
-    });
+    const digits = number.replace(/\D/g, '');
+    if (!digits) throw new NotFoundException('Запись не найдена');
+    const padded = digits.padStart(3, '0');
+    const ticket = await this.dataSource
+      .getRepository(Ticket)
+      .createQueryBuilder('ticket')
+      .leftJoinAndSelect('ticket.serviceType', 'serviceType')
+      .leftJoinAndSelect('ticket.site', 'site')
+      .leftJoinAndSelect('ticket.reservedDesk', 'reservedDesk')
+      .leftJoinAndSelect('ticket.assignments', 'assignments')
+      .leftJoinAndSelect('assignments.desk', 'assignmentDesk')
+      .leftJoinAndSelect('assignments.employee', 'assignmentEmployee')
+      .where('ticket.lookupCodeHash = :lookupCodeHash', { lookupCodeHash })
+      .andWhere(
+        `regexp_replace(ticket.number, '\\D', '', 'g') IN (:...serials)`,
+        { serials: [...new Set([digits, padded])] },
+      )
+      .getOne();
     if (!ticket) throw new NotFoundException('Запись не найдена');
     const queueMeta = await this.getQueueMeta(ticket);
     return {
@@ -691,6 +713,124 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       dayBookings,
       queueEmptyReason,
     };
+  }
+
+  async listEmployeeBookings(user: SessionUser, date: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('Некорректная дата');
+    }
+    const employee = await this.ensureEmployee(user);
+    if (!employee.site?.id) return [];
+    const tickets = await this.dataSource.getRepository(Ticket).find({
+      where: { site: { id: employee.site.id } },
+      relations: { serviceType: true, reservedDesk: true },
+      order: { scheduledAt: 'ASC', createdAt: 'ASC' },
+    });
+    return tickets
+      .filter(
+        (ticket) =>
+          ticket.scheduledAt &&
+          ticket.scheduledAt.toLocaleDateString('en-CA', {
+            timeZone: 'Europe/Moscow',
+          }) === date,
+      )
+      .map((ticket) => this.managerBookingView(ticket));
+  }
+
+  private managerBookingView(ticket: Ticket) {
+    return {
+      id: ticket.id,
+      number: ticket.number,
+      fullName: ticket.fullName,
+      status: ticket.status,
+      country: ticket.country,
+      scheduledAt: ticket.scheduledAt?.toISOString(),
+      scheduledLabel: ticket.scheduledAt
+        ? this.booking.formatScheduledLabel(ticket.scheduledAt)
+        : undefined,
+      departureDate: ticket.departureDate,
+      arrivalDate: ticket.arrivalDate,
+      deskLabel: ticket.reservedDesk?.label,
+      allowedStatuses: [
+        'BOOKED',
+        'CHECKED_IN',
+        'IN_SERVICE',
+        'COMPLETED',
+        'NO_SHOW',
+        'CANCELLED',
+      ] as TicketStatus[],
+    };
+  }
+
+  async setTicketStatus(
+    user: SessionUser,
+    ticketId: string,
+    status: TicketStatus,
+  ) {
+    const allowed: TicketStatus[] = [
+      'BOOKED',
+      'CHECKED_IN',
+      'IN_SERVICE',
+      'COMPLETED',
+      'NO_SHOW',
+      'CANCELLED',
+    ];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException('Этот статус недоступен');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const locked = await manager.findOne(Ticket, {
+        where: { id: ticketId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked) throw new NotFoundException('Заявка не найдена');
+      const ticket = await manager.findOne(Ticket, {
+        where: { id: locked.id },
+        relations: { serviceType: true, reservedDesk: true, site: true },
+      });
+      if (!ticket) throw new NotFoundException('Заявка не найдена');
+      const employee = await this.ensureEmployee(user);
+      if (employee.site?.id && ticket.site?.id !== employee.site.id) {
+        throw new ForbiddenException('Нет доступа к этой записи');
+      }
+      const previous = ticket.status;
+      if (previous === status) {
+        return this.managerBookingView(ticket);
+      }
+      ticket.status = status;
+      if (status === 'CHECKED_IN' && !ticket.checkedInAt) {
+        ticket.checkedInAt = new Date();
+        ticket.priority = 1;
+      }
+      if (status === 'BOOKED') {
+        ticket.priority = 0;
+      }
+      await manager.save(ticket);
+
+      if (['COMPLETED', 'CANCELLED', 'NO_SHOW', 'BOOKED'].includes(status)) {
+        const assignment = await manager.findOne(Assignment, {
+          where: { ticket: { id: ticket.id }, active: true },
+          relations: { employee: true },
+        });
+        if (assignment) {
+          assignment.active = false;
+          assignment.completedAt = new Date();
+          if (assignment.employee) {
+            assignment.employee.status = 'AVAILABLE';
+            await manager.save([assignment, assignment.employee]);
+          } else {
+            await manager.save(assignment);
+          }
+        }
+      }
+
+      await this.event(manager, ticket.id, status, { previous }, user.subject);
+      await this.audit(manager, user.subject, 'TICKET_STATUS_SET', ticket.id, {
+        from: previous,
+        to: status,
+      });
+      return this.managerBookingView(ticket);
+    });
   }
 
   private staffTicketView(ticket: Ticket) {
@@ -1139,23 +1279,109 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async listAdminEmployees() {
-    const employees = await this.dataSource.getRepository(Employee).find({
-      relations: { desk: true, site: true },
-      order: { displayName: 'ASC' },
+    return this.listManagers();
+  }
+
+  async listManagers() {
+    const [keycloakUsers, dbEmployees] = await Promise.all([
+      this.keycloakAdmin.listEmployeeUsers(),
+      this.dataSource.getRepository(Employee).find({
+        relations: { desk: true, site: true },
+      }),
+    ]);
+    const bySubject = new Map(
+      dbEmployees.map((employee) => [employee.oidcSubject, employee]),
+    );
+    return keycloakUsers
+      .map((user) => {
+        const employee = bySubject.get(user.id);
+        const displayName =
+          [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+          user.username;
+        return {
+          id: employee?.id ?? null,
+          keycloakId: user.id,
+          username: user.username,
+          displayName: employee?.displayName ?? displayName,
+          role: employee?.role ?? 'EMPLOYEE',
+          status: employee?.status ?? 'OFFLINE',
+          country: employee?.country ?? null,
+          desk: employee?.desk
+            ? { id: employee.desk.id, label: employee.desk.label }
+            : null,
+        };
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ru'));
+  }
+
+  async createManager(
+    actorSubject: string,
+    input: {
+      username: string;
+      firstName: string;
+      lastName: string;
+      email?: string;
+    },
+  ) {
+    const created = await this.keycloakAdmin.createEmployeeUser(input);
+    const site = await this.dataSource.getRepository(Site).findOne({
+      where: { active: true },
+      order: { name: 'ASC' },
     });
-    return employees.map((employee) => ({
-      id: employee.id,
-      displayName: employee.displayName,
-      role: employee.role,
-      status: employee.status,
-      country: employee.country ?? null,
-      site: employee.site
-        ? { id: employee.site.id, name: employee.site.name }
-        : null,
-      desk: employee.desk
-        ? { id: employee.desk.id, label: employee.desk.label }
-        : null,
-    }));
+    let employee = await this.dataSource.getRepository(Employee).findOne({
+      where: { oidcSubject: created.userId },
+    });
+    if (!employee && site) {
+      employee = await this.dataSource.getRepository(Employee).save(
+        this.dataSource.getRepository(Employee).create({
+          oidcSubject: created.userId,
+          displayName: `${input.firstName.trim()} ${input.lastName.trim()}`.trim(),
+          role: 'EMPLOYEE',
+          site,
+        }),
+      );
+    }
+    await this.dataSource.getRepository(AuditEvent).save({
+      actorSubject,
+      action: 'MANAGER_CREATED',
+      targetId: created.userId,
+      details: { username: created.username },
+    });
+    return {
+      id: employee?.id ?? null,
+      keycloakId: created.userId,
+      username: created.username,
+      displayName: employee?.displayName ?? created.username,
+      temporaryPassword: created.temporaryPassword,
+    };
+  }
+
+  async resetManagerPassword(actorSubject: string, keycloakId: string) {
+    const reset = await this.keycloakAdmin.resetUserPassword(keycloakId);
+    await this.dataSource.getRepository(AuditEvent).save({
+      actorSubject,
+      action: 'MANAGER_PASSWORD_RESET',
+      targetId: keycloakId,
+      details: {},
+    });
+    return reset;
+  }
+
+  private async ensureEmployeeForCountryUpdate(
+    manager: EntityManager,
+    employeeId: string,
+  ): Promise<Employee> {
+    const locked = await manager.findOne(Employee, {
+      where: { id: employeeId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!locked) throw new NotFoundException('Сотрудник не найден');
+    const employee = await manager.findOne(Employee, {
+      where: { id: locked.id },
+      relations: { desk: true },
+    });
+    if (!employee) throw new NotFoundException('Сотрудник не найден');
+    return employee;
   }
 
   async updateEmployeeCountry(
@@ -1164,12 +1390,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     country: ClientCountry,
   ) {
     return this.dataSource.transaction(async (manager) => {
-      const employee = await manager.findOne(Employee, {
-        where: { id: employeeId },
-        relations: { desk: true },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!employee) throw new NotFoundException('Сотрудник не найден');
+      const employee = await this.ensureEmployeeForCountryUpdate(
+        manager,
+        employeeId,
+      );
       if (employee.role === 'ADMIN') {
         throw new BadRequestException(
           'Нельзя изменить направление администратора',
@@ -1185,17 +1409,22 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
             : null,
         };
       }
-      employee.country = country;
-      if (employee.desk) {
-        const desk = await manager.findOne(Desk, {
-          where: { id: employee.desk.id },
-        });
-        if (desk && desk.country !== country) {
-          await this.detachEmployeeDesk(manager, employee.id, actorSubject);
-          employee.desk = undefined;
-        }
+      const desk = employee.desk
+        ? await manager.findOne(Desk, { where: { id: employee.desk.id } })
+        : null;
+      if (desk && desk.country !== country) {
+        await this.releaseEmployeeForCountryChange(
+          manager,
+          employee.id,
+          actorSubject,
+        );
+        await manager
+          .createQueryBuilder()
+          .relation(Employee, 'desk')
+          .of(employee.id)
+          .set(null);
       }
-      await manager.save(employee);
+      await manager.update(Employee, { id: employee.id }, { country });
       await this.audit(
         manager,
         actorSubject,
@@ -1205,15 +1434,51 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
           country,
         },
       );
+      const updated = await manager.findOne(Employee, {
+        where: { id: employee.id },
+        relations: { desk: true },
+      });
+      if (!updated) throw new NotFoundException('Сотрудник не найден');
       return {
-        id: employee.id,
-        displayName: employee.displayName,
-        country: employee.country,
-        desk: employee.desk
-          ? { id: employee.desk.id, label: employee.desk.label }
+        id: updated.id,
+        displayName: updated.displayName,
+        country: updated.country,
+        desk: updated.desk
+          ? { id: updated.desk.id, label: updated.desk.label }
           : null,
       };
     });
+  }
+
+  async updateManagerCountry(
+    actorSubject: string,
+    keycloakId: string,
+    country: ClientCountry,
+  ) {
+    let employee = await this.dataSource.getRepository(Employee).findOne({
+      where: { oidcSubject: keycloakId },
+    });
+    if (!employee) {
+      const site = await this.dataSource.getRepository(Site).findOne({
+        where: { active: true },
+        order: { name: 'ASC' },
+      });
+      if (!site) throw new NotFoundException('Площадка не найдена');
+      const users = await this.keycloakAdmin.listEmployeeUsers();
+      const user = users.find((row) => row.id === keycloakId);
+      if (!user) throw new NotFoundException('Пользователь не найден');
+      employee = await this.dataSource.getRepository(Employee).save(
+        this.dataSource.getRepository(Employee).create({
+          oidcSubject: keycloakId,
+          displayName:
+            [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+            user.username,
+          role: 'EMPLOYEE',
+          site,
+        }),
+      );
+    }
+    return this.updateEmployeeCountry(actorSubject, employee.id, country);
   }
 
   async assignEmployeeDesk(
@@ -1418,6 +1683,36 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         );
       });
     }
+  }
+
+  private async releaseEmployeeForCountryChange(
+    manager: EntityManager,
+    employeeId: string,
+    actorSubject: string,
+  ): Promise<void> {
+    const active = await manager.findOne(Assignment, {
+      where: { employee: { id: employeeId }, active: true },
+      relations: { ticket: true },
+    });
+    if (!active) return;
+    if (active.ticket.status === 'IN_SERVICE') {
+      throw new ConflictException(
+        'Сотрудник обслуживает клиента — завершите приём, затем смените направление',
+      );
+    }
+    if (canReleaseOnBreak(active.ticket.status)) {
+      await this.releaseAssignmentForBreak(
+        manager,
+        active,
+        actorSubject,
+        'PAUSED',
+      );
+    } else {
+      active.active = false;
+      active.completedAt = new Date();
+      await manager.save(active);
+    }
+    await manager.update(Employee, { id: employeeId }, { status: 'OFFLINE' });
   }
 
   private async releaseEmployeeAssignmentsForDeskChange(
@@ -1689,7 +1984,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       estimatedWaitMinutes: queueMeta?.estimatedWaitMinutes ?? 0,
       country: ticket.country,
       fullName: ticket.fullName,
-      travelHistory: ticket.travelHistory,
+      departureDate: ticket.departureDate,
+      arrivalDate: ticket.arrivalDate,
       scheduledAt: ticket.scheduledAt?.toISOString(),
       scheduledLabel: ticket.scheduledAt
         ? this.booking.formatScheduledLabel(ticket.scheduledAt)

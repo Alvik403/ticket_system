@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -11,8 +11,11 @@ import {
   PublicCsrfGuard,
   SessionGuard,
 } from './auth/auth';
+import { KeycloakAdminService } from './auth/keycloak-admin.service';
+import { AppThrottlerGuard } from './http/app-throttler.guard';
 import { AddPersonalDataConsentAt1735689600000 } from './migrations/1735689600000-AddPersonalDataConsentAt';
 import { AddCheckInAndSlotHold1777900000000 } from './migrations/1777900000000-AddCheckInAndSlotHold';
+import { AddDepartureArrivalDates1778000000000 } from './migrations/1778000000000-AddDepartureArrivalDates';
 import {
   BlockedSlot,
   Desk,
@@ -65,6 +68,7 @@ import { RetentionService } from './queue/retention.service';
         migrations: [
           AddPersonalDataConsentAt1735689600000,
           AddCheckInAndSlotHold1777900000000,
+          AddDepartureArrivalDates1778000000000,
         ],
         logging: false,
       }),
@@ -87,7 +91,8 @@ import { RetentionService } from './queue/retention.service';
     BookingService,
     RateLimitService,
     RetentionService,
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    KeycloakAdminService,
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
 })
 export class AppModule {}

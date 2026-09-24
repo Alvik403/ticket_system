@@ -25,6 +25,7 @@ import {
   AssignmentActionDto,
   CreateBlockedSlotDto,
   CreateDeskDto,
+  CreateManagerDto,
   CreateTicketDto,
   EmployeeSelfDeskDto,
   EmployeeStatusDto,
@@ -32,6 +33,7 @@ import {
   LookupTicketDto,
   RefreshHoldDto,
   RescheduleTicketDto,
+  SetTicketStatusDto,
   UpdateDeskDto,
   UpdateEmployeeCountryDto,
 } from './queue.dto';
@@ -154,7 +156,8 @@ export class PublicQueueController {
       serviceTypeId: body.serviceTypeId,
       country: body.country,
       fullName: body.fullName,
-      travelHistory: body.travelHistory,
+      departureDate: body.departureDate,
+      arrivalDate: body.arrivalDate,
       scheduledAt: body.scheduledAt,
       sessionId: request.sessionID,
       holdId: body.holdId,
@@ -243,6 +246,15 @@ export class EmployeeQueueController {
     return this.queue.getCurrent(request.session.user!);
   }
 
+  @Get('bookings')
+  bookings(@Req() request: Request) {
+    const date = queryString(request.query.date);
+    if (!date) {
+      return [];
+    }
+    return this.queue.listEmployeeBookings(request.session.user!, date);
+  }
+
   @Get('desks')
   desks(@Req() request: Request) {
     return this.queue.listEmployeeDesks(request.session.user!);
@@ -287,6 +299,19 @@ export class EmployeeQueueController {
   @Post('tickets/:id/no-show')
   markNoShow(@Req() request: Request, @Param('id') id: string) {
     return this.queue.markNoShow(request.session.user!, id);
+  }
+
+  @Patch('tickets/:id/status')
+  setTicketStatus(
+    @Req() request: Request,
+    @Param('id') id: string,
+    @Body() body: SetTicketStatusDto,
+  ) {
+    return this.queue.setTicketStatus(
+      request.session.user!,
+      id,
+      body.status,
+    );
   }
 
   @Post('assignments/:id/action')
@@ -410,6 +435,40 @@ export class AdminQueueController {
   @Get('employees')
   employees() {
     return this.queue.listAdminEmployees();
+  }
+
+  @Get('managers')
+  managers() {
+    return this.queue.listManagers();
+  }
+
+  @Post('managers')
+  createManager(@Req() request: Request, @Body() body: CreateManagerDto) {
+    return this.queue.createManager(request.session.user!.subject, body);
+  }
+
+  @Post('managers/:keycloakId/reset-password')
+  resetManagerPassword(
+    @Req() request: Request,
+    @Param('keycloakId') keycloakId: string,
+  ) {
+    return this.queue.resetManagerPassword(
+      request.session.user!.subject,
+      keycloakId,
+    );
+  }
+
+  @Patch('managers/:keycloakId/country')
+  updateManagerCountry(
+    @Req() request: Request,
+    @Param('keycloakId') keycloakId: string,
+    @Body() body: UpdateEmployeeCountryDto,
+  ) {
+    return this.queue.updateManagerCountry(
+      request.session.user!.subject,
+      keycloakId,
+      body.country,
+    );
   }
 
   @Patch('employees/:id/desk')

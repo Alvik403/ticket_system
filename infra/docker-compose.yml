@@ -37,6 +37,9 @@ services:
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-replace-in-production}
       OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:18080/api/auth/callback}
       STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:18080/staff/}
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: change-me
     depends_on:
       postgres:
         condition: service_healthy
