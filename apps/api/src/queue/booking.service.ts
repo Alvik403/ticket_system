@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { DataSource, In, Not } from 'typeorm';
+import { DataSource, In, Not, Raw } from 'typeorm';
 import { SLOT_HOLDING_STATUSES } from '../domain/entities';
 import { zonedDateTime } from '../timezone';
 import { RateLimitService } from './rate-limit.service';
@@ -96,6 +96,12 @@ export class BookingService {
       active: true,
     });
     const timeZone = site?.timezone ?? 'Europe/Moscow';
+    const dayStart = this.slotToDate(date, '00:00', timeZone);
+    const [year, month, day] = date.split('-').map(Number);
+    const nextDate = new Date(Date.UTC(year, month - 1, day + 1))
+      .toISOString()
+      .slice(0, 10);
+    const dayEnd = this.slotToDate(nextDate, '00:00', timeZone);
     const duration = this.durationFor(country);
     const candidates = this.generateSlotTimes(country);
     const now = Date.now();
@@ -107,6 +113,10 @@ export class BookingService {
         site: { id: siteId },
         country,
         status: In([...ACTIVE_SLOT_STATUSES]),
+        scheduledAt: Raw(
+          (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+          { dayStart, dayEnd },
+        ),
         ...(excludeTicketId ? { id: Not(excludeTicketId) } : {}),
       },
       relations: { reservedDesk: true },
@@ -122,7 +132,11 @@ export class BookingService {
       const startMs = scheduledAt.getTime();
       const endMs = startMs + duration * 60_000;
       if (startMs <= now || !desks.length) {
-        return { time, scheduledAt: scheduledAt.toISOString(), available: false };
+        return {
+          time,
+          scheduledAt: scheduledAt.toISOString(),
+          available: false,
+        };
       }
       const busy = new Set<string>();
       for (const ticket of tickets) {
@@ -138,7 +152,11 @@ export class BookingService {
         if (startMs < holdEnd && endMs > holdStart) busy.add(hold.deskId);
       }
       for (const block of blocks) {
-        const bStart = this.slotToDate(date, block.startTime, timeZone).getTime();
+        const bStart = this.slotToDate(
+          date,
+          block.startTime,
+          timeZone,
+        ).getTime();
         const bEnd = this.slotToDate(date, block.endTime, timeZone).getTime();
         if (startMs < bEnd && endMs > bStart && block.employee?.desk?.id) {
           busy.add(block.employee.desk.id);
@@ -338,6 +356,10 @@ export class BookingService {
         site: { id: siteId },
 
         status: In([...ACTIVE_SLOT_STATUSES, 'COMPLETED']),
+        scheduledAt: Raw(
+          (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+          { dayStart, dayEnd },
+        ),
       },
 
       relations: {
@@ -351,25 +373,15 @@ export class BookingService {
       order: { scheduledAt: 'ASC' },
     });
 
-    return tickets
+    return tickets.map((ticket) => {
+      return {
+        scheduledAt: ticket.scheduledAt!.toISOString(),
 
-      .filter((ticket) => {
-        if (!ticket.scheduledAt) return false;
+        durationMinutes: ticket.durationMinutes,
 
-        const t = ticket.scheduledAt.getTime();
-
-        return t >= dayStart.getTime() && t < dayEnd.getTime();
-      })
-
-      .map((ticket) => {
-        return {
-          scheduledAt: ticket.scheduledAt!.toISOString(),
-
-          durationMinutes: ticket.durationMinutes,
-
-          occupied: true,
-        };
-      });
+        occupied: true,
+      };
+    });
   }
 
   async listBlockedSlots(siteId: string) {
@@ -617,11 +629,7 @@ export class BookingService {
       }
     }
 
-    for (const deskId of await this.rateLimit.heldDeskIds(
-      startMs,
-      endMs,
-      20,
-    )) {
+    for (const deskId of await this.rateLimit.heldDeskIds(startMs, endMs, 20)) {
       busy.add(deskId);
     }
 

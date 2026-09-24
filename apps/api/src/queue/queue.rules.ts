@@ -1,11 +1,7 @@
 import type { TicketStatus } from '../domain/entities';
 
 export type AssignmentAction =
-  | 'CALL'
-  | 'START'
-  | 'COMPLETE'
-  | 'REQUEUE'
-  | 'NO_SHOW';
+  'CALL' | 'START' | 'COMPLETE' | 'REQUEUE' | 'NO_SHOW';
 
 const transitions: Record<
   AssignmentAction,
@@ -27,9 +23,14 @@ export function nextTicketStatus(
 }
 
 export function canCancel(status: TicketStatus): boolean {
-  return ['BOOKED', 'WAITING', 'CHECKED_IN', 'ASSIGNED', 'CALLED', 'REQUEUED'].includes(
-    status,
-  );
+  return [
+    'BOOKED',
+    'WAITING',
+    'CHECKED_IN',
+    'ASSIGNED',
+    'CALLED',
+    'REQUEUED',
+  ].includes(status);
 }
 
 export function canReleaseOnBreak(status: TicketStatus): boolean {

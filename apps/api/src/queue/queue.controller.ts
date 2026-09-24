@@ -17,7 +17,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { randomBytes } from 'node:crypto';
-import { from, interval, map, Observable, startWith, switchMap } from 'rxjs';
+import { from, map, Observable, startWith, switchMap } from 'rxjs';
 import { PublicCsrfGuard, Roles, SessionGuard } from '../auth/auth';
 import { clientIp } from '../http/client-ip';
 import {
@@ -39,6 +39,7 @@ import {
 } from './queue.dto';
 import { BookingService } from './booking.service';
 import { QueueService } from './queue.service';
+import { QueueUpdatesService } from './queue-updates.service';
 import { RateLimitService } from './rate-limit.service';
 
 function queryString(value: unknown, fallback = ''): string {
@@ -53,6 +54,7 @@ export class PublicQueueController {
     private readonly queue: QueueService,
     private readonly booking: BookingService,
     private readonly rateLimit: RateLimitService,
+    private readonly updates: QueueUpdatesService,
   ) {}
 
   private async findActiveTicket(request: Request) {
@@ -220,8 +222,8 @@ export class PublicQueueController {
         if (!tokenHash) {
           return from([{ data: { error: 'Нет активного талона' } }]);
         }
-        return interval(3_000).pipe(
-          startWith(0),
+        return this.updates.changes.pipe(
+          startWith(undefined),
           switchMap(() => this.queue.getPublicTicketByHash(tokenHash)),
           map((data) => ({ data })),
         );
@@ -239,6 +241,7 @@ export class EmployeeQueueController {
   constructor(
     private readonly queue: QueueService,
     private readonly rateLimit: RateLimitService,
+    private readonly updates: QueueUpdatesService,
   ) {}
 
   @Get('current')
@@ -271,8 +274,8 @@ export class EmployeeQueueController {
   @Sse('events')
   events(@Req() request: Request): Observable<MessageEvent> {
     const user = request.session.user!;
-    return interval(5_000).pipe(
-      startWith(0),
+    return this.updates.changes.pipe(
+      startWith(undefined),
       switchMap(() => this.queue.getCurrent(user)),
       map((data) => ({ data })),
     );
@@ -307,11 +310,7 @@ export class EmployeeQueueController {
     @Param('id') id: string,
     @Body() body: SetTicketStatusDto,
   ) {
-    return this.queue.setTicketStatus(
-      request.session.user!,
-      id,
-      body.status,
-    );
+    return this.queue.setTicketStatus(request.session.user!, id, body.status);
   }
 
   @Post('assignments/:id/action')

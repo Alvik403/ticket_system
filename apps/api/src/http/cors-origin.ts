@@ -1,4 +1,6 @@
-export function parseOriginList(...values: Array<string | undefined>): string[] {
+export function parseOriginList(
+  ...values: Array<string | undefined>
+): string[] {
   return values
     .flatMap((value) => (value ?? '').split(','))
     .map((value) => value.trim())

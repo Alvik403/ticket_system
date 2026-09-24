@@ -102,7 +102,11 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     return Boolean(await this.requireClient().get(`slot:refresh:${sessionId}`));
   }
 
-  async refreshHold(sessionId: string, holdId: string, ttlSeconds = 180): Promise<boolean> {
+  async refreshHold(
+    sessionId: string,
+    holdId: string,
+    ttlSeconds = 180,
+  ): Promise<boolean> {
     const redis = this.requireClient();
     const key = await redis.get(`slot:session:${sessionId}`);
     if (!key) return false;
@@ -161,7 +165,11 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     return this.requireClient().ttl(this.holdKey(deskId, scheduledAt));
   }
 
-  async heldDeskIds(startMs: number, endMs: number, durationMinutes = 20): Promise<Set<string>> {
+  async heldDeskIds(
+    startMs: number,
+    endMs: number,
+    durationMinutes = 20,
+  ): Promise<Set<string>> {
     const busy = new Set<string>();
     for (const hold of await this.listHolds()) {
       const holdStart = new Date(hold.scheduledAt).getTime();
@@ -175,7 +183,10 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
   async listHolds(): Promise<Array<{ deskId: string; scheduledAt: string }>> {
     const redis = this.requireClient();
     const keys: string[] = [];
-    for await (const key of redis.scanIterator({ MATCH: 'slot:hold:*', COUNT: 100 })) {
+    for await (const key of redis.scanIterator({
+      MATCH: 'slot:hold:*',
+      COUNT: 100,
+    })) {
       const value = Array.isArray(key) ? key[0] : key;
       if (typeof value === 'string') keys.push(value);
     }
@@ -189,7 +200,11 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     return this.requireClient().get(`idem:${subject}:${key}`);
   }
 
-  async setIdempotent(subject: string, key: string, payload: string): Promise<void> {
+  async setIdempotent(
+    subject: string,
+    key: string,
+    payload: string,
+  ): Promise<void> {
     await this.requireClient().set(`idem:${subject}:${key}`, payload, {
       EX: 86_400,
     });
@@ -199,7 +214,9 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     return `slot:hold:${deskId}:${scheduledAt}`;
   }
 
-  private parseHoldKey(key: string): { deskId: string; scheduledAt: string } | null {
+  private parseHoldKey(
+    key: string,
+  ): { deskId: string; scheduledAt: string } | null {
     const [, , deskId, ...rest] = key.split(':');
     if (!deskId || !rest.length) return null;
     return { deskId, scheduledAt: rest.join(':') };

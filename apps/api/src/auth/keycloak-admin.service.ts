@@ -83,7 +83,10 @@ export class KeycloakAdminService {
     return payload.access_token;
   }
 
-  private async adminFetch(path: string, init?: RequestInit): Promise<Response> {
+  private async adminFetch(
+    path: string,
+    init?: RequestInit,
+  ): Promise<Response> {
     const token = await this.adminToken();
     const headers = new Headers(init?.headers);
     headers.set('authorization', `Bearer ${token}`);
@@ -97,9 +100,9 @@ export class KeycloakAdminService {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
     const specials = '!@#$%';
     const core = Array.from({ length: 10 }, () => {
-      return alphabet[randomBytes(1)[0]! % alphabet.length];
+      return alphabet[randomBytes(1)[0] % alphabet.length];
     }).join('');
-    return `${core}${specials[randomBytes(1)[0]! % specials.length]}9`;
+    return `${core}${specials[randomBytes(1)[0] % specials.length]}9`;
   }
 
   async listEmployeeUsers(): Promise<KeycloakUser[]> {
@@ -154,16 +157,22 @@ export class KeycloakAdminService {
       }),
     });
     if (createRes.status === 409) {
-      throw new ConflictException('Пользователь с таким логином уже существует');
+      throw new ConflictException(
+        'Пользователь с таким логином уже существует',
+      );
     }
     if (!createRes.ok) {
-      this.logger.error(`Keycloak create user failed: HTTP ${createRes.status}`);
+      this.logger.error(
+        `Keycloak create user failed: HTTP ${createRes.status}`,
+      );
       throw new ServiceUnavailableException('Не удалось создать пользователя');
     }
     const location = createRes.headers.get('location') ?? '';
     const userId = location.split('/').pop();
     if (!userId) {
-      throw new ServiceUnavailableException('Keycloak не вернул id пользователя');
+      throw new ServiceUnavailableException(
+        'Keycloak не вернул id пользователя',
+      );
     }
     const roleRes = await this.adminFetch(
       `/admin/realms/${realm}/roles/EMPLOYEE`,
@@ -180,7 +189,9 @@ export class KeycloakAdminService {
       },
     );
     if (!mapRes.ok) {
-      throw new ServiceUnavailableException('Не удалось назначить роль EMPLOYEE');
+      throw new ServiceUnavailableException(
+        'Не удалось назначить роль EMPLOYEE',
+      );
     }
     return { userId, username, temporaryPassword };
   }

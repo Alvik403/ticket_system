@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
@@ -37,6 +37,10 @@ import {
 } from './queue/queue.controller';
 import { BookingService } from './queue/booking.service';
 import { QueueService } from './queue/queue.service';
+import {
+  QueueUpdatesInterceptor,
+  QueueUpdatesService,
+} from './queue/queue-updates.service';
 import { RateLimitService } from './queue/rate-limit.service';
 import { RetentionService } from './queue/retention.service';
 
@@ -97,6 +101,8 @@ import { RetentionService } from './queue/retention.service';
     RateLimitService,
     RetentionService,
     KeycloakAdminService,
+    QueueUpdatesService,
+    { provide: APP_INTERCEPTOR, useClass: QueueUpdatesInterceptor },
     { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
 })

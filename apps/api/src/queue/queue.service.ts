@@ -36,6 +36,7 @@ import {
   type AssignmentAction,
 } from './queue.rules';
 import { BookingService } from './booking.service';
+import { QueueUpdatesService } from './queue-updates.service';
 import { RateLimitService } from './rate-limit.service';
 
 @Injectable()
@@ -48,6 +49,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     private readonly booking: BookingService,
     private readonly rateLimit: RateLimitService,
     private readonly keycloakAdmin: KeycloakAdminService,
+    private readonly updates: QueueUpdatesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -107,8 +109,14 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   ) {
     const scheduledAt = new Date(scheduledAtIso);
     const existing = await this.rateLimit.getSessionHold(sessionId);
-    if (existing && new Date(existing.scheduledAt).getTime() === scheduledAt.getTime()) {
-      const ttl = await this.rateLimit.holdTtl(existing.deskId, existing.scheduledAt);
+    if (
+      existing &&
+      new Date(existing.scheduledAt).getTime() === scheduledAt.getTime()
+    ) {
+      const ttl = await this.rateLimit.holdTtl(
+        existing.deskId,
+        existing.scheduledAt,
+      );
       return {
         holdId: existing.holdId,
         deskId: existing.deskId,
@@ -141,7 +149,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     if (!held) {
       throw new ConflictException('Это время уже удерживается');
     }
-    const ttl = await this.rateLimit.holdTtl(desk.id, scheduledAt.toISOString());
+    const ttl = await this.rateLimit.holdTtl(
+      desk.id,
+      scheduledAt.toISOString(),
+    );
     return {
       holdId,
       deskId: desk.id,
@@ -223,7 +234,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         !hold ||
         new Date(hold.scheduledAt).getTime() !== scheduledAt.getTime()
       ) {
-        throw new ConflictException('Бронь слота истекла, выберите время снова');
+        throw new ConflictException(
+          'Бронь слота истекла, выберите время снова',
+        );
       }
       const consumed = await this.rateLimit.consumeHold(
         input.sessionId,
@@ -232,7 +245,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         hold.scheduledAt,
       );
       if (!consumed) {
-        throw new ConflictException('Бронь слота истекла, выберите время снова');
+        throw new ConflictException(
+          'Бронь слота истекла, выберите время снова',
+        );
       }
 
       await this.booking.assertSlotAvailable(
@@ -429,7 +444,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       });
       if (!ticket) throw new NotFoundException('Заявка не найдена');
       if (ticket.status !== 'BOOKED') {
-        throw new ConflictException('Неявку можно отметить только для записи без явки');
+        throw new ConflictException(
+          'Неявку можно отметить только для записи без явки',
+        );
       }
       if (!checkInWindowExpired(ticket.scheduledAt, ticket.durationMinutes)) {
         throw new BadRequestException('Окно явки ещё не закончилось');
@@ -1335,7 +1352,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       employee = await this.dataSource.getRepository(Employee).save(
         this.dataSource.getRepository(Employee).create({
           oidcSubject: created.userId,
-          displayName: `${input.firstName.trim()} ${input.lastName.trim()}`.trim(),
+          displayName:
+            `${input.firstName.trim()} ${input.lastName.trim()}`.trim(),
           role: 'EMPLOYEE',
           site,
         }),
@@ -1615,7 +1633,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async dispatchAvailable(): Promise<void> {
-    await this.recoverBreakAssignments();
+    let changed = await this.recoverBreakAssignments();
     const employees = await this.dataSource.getRepository(Employee).find({
       where: { status: 'AVAILABLE' },
       relations: { site: true, desk: true },
@@ -1634,13 +1652,14 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
               relations: { site: true, desk: true },
             })
           : null;
-        if (locked) await this.assignNext(manager, locked);
+        if (locked && (await this.assignNext(manager, locked))) changed++;
       });
     }
-    await this.expireCalls();
+    changed += await this.expireCalls();
+    if (changed > 0) this.updates.notify();
   }
 
-  private async expireCalls(): Promise<void> {
+  private async expireCalls(): Promise<number> {
     const expired = await this.dataSource
       .getRepository(Assignment)
       .createQueryBuilder('assignment')
@@ -1683,6 +1702,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         );
       });
     }
+    return expired.length;
   }
 
   private async releaseEmployeeForCountryChange(
@@ -1767,7 +1787,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       .set(null);
   }
 
-  private async recoverBreakAssignments(): Promise<void> {
+  private async recoverBreakAssignments(): Promise<number> {
     const stale = await this.dataSource
       .getRepository(Assignment)
       .createQueryBuilder('assignment')
@@ -1798,6 +1818,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         );
       });
     }
+    return stale.length;
   }
 
   private async releaseAssignmentForBreak(
@@ -1918,7 +1939,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       order: { updatedAt: 'ASC' },
     });
     const match =
-      employees.find((employee) => employee.desk?.id === ticket.reservedDesk?.id) ??
+      employees.find(
+        (employee) => employee.desk?.id === ticket.reservedDesk?.id,
+      ) ??
       employees.find(
         (employee) =>
           employee.site?.id === ticket.site.id &&
@@ -2006,7 +2029,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   private generateLookupCode(): string {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     return Array.from({ length: 6 }, () => {
-      return alphabet[randomBytes(1)[0]! % alphabet.length];
+      return alphabet[randomBytes(1)[0] % alphabet.length];
     }).join('');
   }
 

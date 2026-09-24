@@ -93,6 +93,28 @@ function formatHoldTime(seconds: number) {
   return `${minutes}:${String(rest).padStart(2, '0')}`
 }
 
+function HoldTimer({
+  hold,
+  seconds,
+  onRefresh,
+}: {
+  hold: Hold | null
+  seconds: number
+  onRefresh: () => void
+}) {
+  if (!hold || seconds <= 0) return null
+  return (
+    <div className="hold-timer">
+      <span>Слот забронирован на {formatHoldTime(seconds)}</span>
+      {hold.canRefresh && (
+        <button type="button" className="secondary" onClick={onRefresh}>
+          Продлить
+        </button>
+      )}
+    </div>
+  )
+}
+
 function formatScheduledDisplay(ticket: Ticket): string {
   if (ticket.scheduledLabel) {
     return ticket.scheduledLabel.replace(',', ' в')
@@ -208,8 +230,10 @@ function App() {
     void bootstrap()
   }, [])
 
+  const ticketNumber = ticket?.number
+
   useEffect(() => {
-    if (!ticket) return
+    if (!ticketNumber) return
     const events = new EventSource(`${API}/public/tickets/events`, {
       withCredentials: true,
     })
@@ -222,7 +246,7 @@ function App() {
       if (value.clientNotice) setError('')
     }
     return () => events.close()
-  }, [ticket?.number])
+  }, [ticketNumber])
 
   useEffect(() => {
     if (!siteId || !selectedDate || !country || step < 2) return
@@ -466,20 +490,6 @@ function App() {
     setArrivalDate('')
   }
 
-  function HoldTimer() {
-    if (!hold || holdSeconds <= 0) return null
-    return (
-      <div className="hold-timer">
-        <span>Слот забронирован на {formatHoldTime(holdSeconds)}</span>
-        {hold.canRefresh && (
-          <button type="button" className="secondary" onClick={() => void refreshHold()}>
-            Продлить
-          </button>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -637,7 +647,7 @@ function App() {
               {step === 2 && (
                 <div className="step-body">
                   <h2>Выберите дату и время</h2>
-                  <HoldTimer />
+                  <HoldTimer hold={hold} seconds={holdSeconds} onRefresh={() => void refreshHold()} />
                   <div className="booking-datetime-layout">
                     <BookingCalendar
                       availableDates={dates}
@@ -688,7 +698,7 @@ function App() {
               {step === 3 && (
                 <div className="step-body">
                   <h2>Контактные данные</h2>
-                  <HoldTimer />
+                  <HoldTimer hold={hold} seconds={holdSeconds} onRefresh={() => void refreshHold()} />
                   <div className="name-grid">
                     <label>
                       Фамилия
@@ -775,7 +785,7 @@ function App() {
               {step === 4 && (
                 <div className="step-body">
                   <h2>Подтверждение</h2>
-                  <HoldTimer />
+                  <HoldTimer hold={hold} seconds={holdSeconds} onRefresh={() => void refreshHold()} />
                   <dl className="summary">
                     <div><dt>Услуга</dt><dd>Предоставление и сдача маршрутного листа</dd></div>
                     <div><dt>Страна</dt><dd>{countryLabel[country as Country]}</dd></div>

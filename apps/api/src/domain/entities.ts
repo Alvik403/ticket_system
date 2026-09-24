@@ -83,6 +83,7 @@ export class Employee {
 @Entity()
 @Index(['site', 'status', 'createdAt'])
 @Index(['site', 'scheduledAt'])
+@Index(['site', 'country', 'scheduledAt', 'status'])
 @Index('one_active_slot_per_desk_time', ['reservedDesk', 'scheduledAt'], {
   unique: true,
   where: `"reservedDeskId" IS NOT NULL AND "scheduledAt" IS NOT NULL AND "status" IN ('BOOKED','WAITING','CHECKED_IN','ASSIGNED','CALLED','IN_SERVICE','REQUEUED')`,
@@ -91,7 +92,8 @@ export class Ticket {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column() number!: string;
   @Column({ unique: true }) accessTokenHash!: string;
-  @Column({ type: 'varchar', nullable: true, unique: true }) lookupCodeHash?: string;
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  lookupCodeHash?: string;
   @Column({ type: 'varchar', default: 'BOOKED' }) status!: TicketStatus;
   @Column({ default: 0 }) callAttempts!: number;
   @Column({ default: 0 }) priority!: number;
