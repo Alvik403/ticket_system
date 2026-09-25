@@ -63,8 +63,8 @@ docker compose -f infra/docker-compose.yml up --build -d
 
 ## Production
 
-Минимум **2 ГБ RAM**, порт `18080`. Запуск только из корня репозитория,
-без `--project-directory`.
+Минимум **2 ГБ RAM**, порты `80`, `443` и `18080`. Запуск только из корня
+репозитория, без `--project-directory`.
 
 ```text
 git clone https://github.com/Alvik403/ticket_system.git
@@ -82,7 +82,14 @@ sudo bash infra/prod-up.sh
 - Схема API создаётся и обновляется версионированными миграциями;
   `DB_SYNCHRONIZE=false`.
 - Login и CORS берут Host из запроса; отдельные URL в env не обязательны.
-- HTTP: `COOKIE_SECURE=false`. HTTPS: `COOKIE_SECURE=true`.
+- HTTP без TLS остаётся на порту `80`. `https://IP/`, `https://IP:18080`
+  и `https://домен` обслуживаются TLS. Если своих сертификатов нет,
+  контейнер выпускает самоподписанный; браузер покажет предупреждение,
+  это не `ERR_SSL_PROTOCOL_ERROR`. Свои `fullchain.pem` и `privkey.pem`
+  можно положить в volume `web-certs`.
+- HSTS на HTTP не отдаётся, чтобы Chrome не принудительно открывал
+  `https://` на порту без TLS. `COOKIE_SECURE=true` только когда весь
+  вход идёт по доверенному HTTPS.
 - Пароли без пробелов, `$` и `#`.
 - `prod-up.sh` собирает образы последовательно, чтобы не исчерпать 2 ГБ RAM.
 - Первый build Keycloak выполняет оптимизацию Quarkus; последующие старты

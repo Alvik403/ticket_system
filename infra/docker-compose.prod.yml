@@ -7,8 +7,13 @@ services:
       dockerfile: infra/Dockerfile.web
       args:
         NGINX_CONF: infra/nginx.prod.conf
+    entrypoint: ["/nginx-web-entrypoint.sh"]
     ports:
+      - "80:80"
+      - "443:443"
       - "18080:18080"
+    volumes:
+      - web-certs:/etc/nginx/certs
     mem_limit: 64m
     pids_limit: 50
     depends_on:
@@ -196,3 +201,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  web-certs:
