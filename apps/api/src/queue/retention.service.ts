@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, LessThan } from 'typeorm';
+import { DataSource, In, LessThan } from 'typeorm';
 import {
   Assignment,
   AuditEvent,
@@ -29,9 +29,6 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
     const intervalMs = Number(
       this.config.get('RETENTION_INTERVAL_MS', '3600000'),
     );
-    void this.purgeExpired().catch((error: unknown) => {
-      this.logger.error('Initial retention purge failed', error);
-    });
     this.timer = setInterval(() => {
       void this.purgeExpired().catch((error: unknown) => {
         this.logger.error('Retention purge failed', error);
@@ -57,6 +54,8 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
         .select(['ticket.id'])
         .where('ticket.status IN (:...statuses)', { statuses: [...TERMINAL] })
         .andWhere('ticket.updatedAt < :cutoff', { cutoff: ticketCutoff })
+        .orderBy('ticket.updatedAt', 'ASC')
+        .limit(500)
         .getMany();
       const ids = expired.map((row) => row.id);
       if (ids.length) {
@@ -79,10 +78,17 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
           .where('id IN (:...ids)', { ids })
           .execute();
       }
-      const auditResult = await manager.getRepository(AuditEvent).delete({
-        occurredAt: LessThan(auditCutoff),
+      const expiredAudits = await manager.getRepository(AuditEvent).find({
+        select: { id: true },
+        where: { occurredAt: LessThan(auditCutoff) },
+        order: { occurredAt: 'ASC' },
+        take: 1_000,
       });
-      const audits = auditResult.affected ?? 0;
+      const auditIds = expiredAudits.map((row) => row.id);
+      const auditResult = auditIds.length
+        ? await manager.getRepository(AuditEvent).delete({ id: In(auditIds) })
+        : null;
+      const audits = auditResult?.affected ?? 0;
       if (ids.length || audits) {
         this.logger.log(
           `Retention removed ${ids.length} tickets and ${audits} audit rows`,

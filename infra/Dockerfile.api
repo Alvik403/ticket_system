@@ -5,11 +5,9 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/client-web/package.json ./apps/client-web/package.json
 COPY apps/staff-web/package.json ./apps/staff-web/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline
+RUN npm ci --no-audit --no-fund
 
 COPY apps/api ./apps/api
-COPY packages/contracts ./packages/contracts
 RUN npm run build --workspace api
 RUN npm prune --omit=dev
 

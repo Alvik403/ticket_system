@@ -11,12 +11,16 @@ import {
   Ticket,
   TicketEvent,
 } from './domain/entities';
-import { AddPersonalDataConsentAt1735689600000 } from './migrations/1735689600000-AddPersonalDataConsentAt';
-import { AddCheckInAndSlotHold1777900000000 } from './migrations/1777900000000-AddCheckInAndSlotHold';
+import { postgresConnectionUrl } from './http/connection-urls';
+import { appMigrations } from './migrations';
 
 export default new DataSource({
   type: 'postgres',
-  url: process.env.DATABASE_URL,
+  url: postgresConnectionUrl(
+    process.env.DATABASE_URL,
+    process.env.POSTGRES_PASSWORD,
+    process.env.POSTGRES_HOST,
+  ),
   entities: [
     Site,
     ServiceType,
@@ -29,8 +33,5 @@ export default new DataSource({
     BlockedSlot,
     Shift,
   ],
-  migrations: [
-    AddPersonalDataConsentAt1735689600000,
-    AddCheckInAndSlotHold1777900000000,
-  ],
+  migrations: appMigrations,
 });

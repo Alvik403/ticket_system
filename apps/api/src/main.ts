@@ -1,7 +1,6 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import session from 'express-session';
@@ -92,6 +91,7 @@ async function bootstrap() {
       config.get('NODE_ENV') === 'production' ? 'false' : 'true',
     ) === 'true';
   if (enableOpenApi) {
+    const { DocumentBuilder, SwaggerModule } = await import('@nestjs/swagger');
     const openApi = new DocumentBuilder()
       .setTitle('API электронной очереди')
       .setDescription(

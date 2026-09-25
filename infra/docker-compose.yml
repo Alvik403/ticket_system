@@ -96,6 +96,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: change-me
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-replace-in-production}
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
@@ -111,29 +112,14 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "java",
-          "/opt/keycloak/data/import/HealthCheck.java",
-          "http://127.0.0.1:8080/realms/ticket-system",
+          "CMD-SHELL",
+          "bash -ec \"exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3\"",
         ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 30
-      start_period: 90s
+      retries: 10
+      start_period: 120s
     restart: unless-stopped
-
-  keycloak-init:
-    image: quay.io/keycloak/keycloak:26.3
-    entrypoint: ["/bin/bash", "/opt/keycloak/data/import/ensure-redirects.sh"]
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: change-me
-    volumes:
-      - ./keycloak:/opt/keycloak/data/import:ro
-    depends_on:
-      keycloak:
-        condition: service_healthy
-    restart: on-failure
 
 volumes:
   postgres-data:

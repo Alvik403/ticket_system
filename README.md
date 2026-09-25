@@ -77,12 +77,16 @@ sudo bash infra/prod-up.sh
 ```
 
 - `infra/docker-compose.prod.yml`: БД/Redis не публикуются, OpenAPI выключен.
-- Схема БД создаётся TypeORM (`DB_SYNCHRONIZE=true`): отдельные CREATE-миграции
-  в этом MVP нет, только ALTER поверх уже существующей таблицы `ticket`.
+- API и Keycloak используют PostgreSQL; Keycloak хранит таблицы в отдельной
+  схеме `keycloak`, поэтому созданные сотрудники переживают пересоздание контейнера.
+- Схема API создаётся и обновляется версионированными миграциями;
+  `DB_SYNCHRONIZE=false`.
 - Login и CORS берут Host из запроса; отдельные URL в env не обязательны.
 - HTTP: `COOKIE_SECURE=false`. HTTPS: `COOKIE_SECURE=true`.
 - Пароли без пробелов, `$` и `#`.
-- Keycloak после старта может быть `Waiting` 1–2 минуты.
+- `prod-up.sh` собирает образы последовательно, чтобы не исчерпать 2 ГБ RAM.
+- Первый build Keycloak выполняет оптимизацию Quarkus; последующие старты
+  используют `start --optimized`. Публичный клиент и API не ждут готовности OIDC.
 - Заменить демо-учётки, включить TOTP для администраторов, WAF,
   мониторинг и backup. Организационные действия:
   `docs/security-and-personal-data.md`.

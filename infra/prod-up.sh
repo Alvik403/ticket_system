@@ -14,5 +14,11 @@ for key in POSTGRES_PASSWORD REDIS_PASSWORD SESSION_SECRET OIDC_CLIENT_SECRET KC
   fi
 done
 
-docker compose -f infra/docker-compose.prod.yml --env-file .env up --build -d
-docker compose -f infra/docker-compose.prod.yml --env-file .env ps
+compose=(docker compose -f infra/docker-compose.prod.yml --env-file .env)
+
+# Build one image at a time: parallel npm/JVM builds can exhaust a 2 GB host.
+"${compose[@]}" build keycloak
+"${compose[@]}" build api
+"${compose[@]}" build web
+"${compose[@]}" up --no-build -d
+"${compose[@]}" ps

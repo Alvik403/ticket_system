@@ -30,6 +30,10 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     await this.client?.quit();
   }
 
+  async ping(): Promise<void> {
+    await this.requireClient().ping();
+  }
+
   async assertCanCreateTicket(clientKey: string): Promise<void> {
     const redis = this.requireClient();
     const cooldownTtl = await redis.ttl(`ticket:cooldown:${clientKey}`);
@@ -90,11 +94,30 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     });
     if (!created) {
       const current = await redis.get(key);
-      return current?.startsWith(`${sessionId}:`) ?? false;
+      const owned = current?.startsWith(`${sessionId}:`) ?? false;
+      if (owned) {
+        const ttl = await redis.ttl(key);
+        await redis.zAdd('slot:holds', {
+          score: Date.now() + Math.max(ttl, 1) * 1000,
+          value: key,
+        });
+        await redis.expire('slot:holds', 86_400);
+      }
+      return owned;
     }
     const previous = await redis.get(`slot:session:${sessionId}`);
-    if (previous && previous !== key) await redis.del(previous);
-    await redis.set(`slot:session:${sessionId}`, key, { EX: ttlSeconds });
+    if (previous && previous !== key) {
+      await redis.multi().del(previous).zRem('slot:holds', previous).exec();
+    }
+    await redis
+      .multi()
+      .set(`slot:session:${sessionId}`, key, { EX: ttlSeconds })
+      .zAdd('slot:holds', {
+        score: Date.now() + ttlSeconds * 1000,
+        value: key,
+      })
+      .expire('slot:holds', 86_400)
+      .exec();
     return true;
   }
 
@@ -114,9 +137,17 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     if (value !== `${sessionId}:${holdId}`) return false;
     const refreshed = await redis.get(`slot:refresh:${sessionId}`);
     if (refreshed) return false;
-    await redis.expire(key, ttlSeconds);
-    await redis.expire(`slot:session:${sessionId}`, ttlSeconds);
-    await redis.set(`slot:refresh:${sessionId}`, '1', { EX: ttlSeconds });
+    await redis
+      .multi()
+      .expire(key, ttlSeconds)
+      .expire(`slot:session:${sessionId}`, ttlSeconds)
+      .set(`slot:refresh:${sessionId}`, '1', { EX: ttlSeconds })
+      .zAdd('slot:holds', {
+        score: Date.now() + ttlSeconds * 1000,
+        value: key,
+      })
+      .expire('slot:holds', 86_400)
+      .exec();
     return true;
   }
 
@@ -130,9 +161,13 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
     const key = this.holdKey(deskId, scheduledAt);
     const value = await redis.get(key);
     if (value !== `${sessionId}:${holdId}`) return false;
-    await redis.del(key);
-    await redis.del(`slot:session:${sessionId}`);
-    await redis.del(`slot:refresh:${sessionId}`);
+    await redis
+      .multi()
+      .del(key)
+      .del(`slot:session:${sessionId}`)
+      .del(`slot:refresh:${sessionId}`)
+      .zRem('slot:holds', key)
+      .exec();
     return true;
   }
 
@@ -182,14 +217,8 @@ export class RateLimitService implements OnModuleInit, OnModuleDestroy {
 
   async listHolds(): Promise<Array<{ deskId: string; scheduledAt: string }>> {
     const redis = this.requireClient();
-    const keys: string[] = [];
-    for await (const key of redis.scanIterator({
-      MATCH: 'slot:hold:*',
-      COUNT: 100,
-    })) {
-      const value = Array.isArray(key) ? key[0] : key;
-      if (typeof value === 'string') keys.push(value);
-    }
+    await redis.zRemRangeByScore('slot:holds', 0, Date.now());
+    const keys = await redis.zRange('slot:holds', 0, -1);
     return keys.flatMap((key) => {
       const parsed = this.parseHoldKey(key);
       return parsed ? [parsed] : [];

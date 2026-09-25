@@ -17,7 +17,16 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { randomBytes } from 'node:crypto';
-import { from, map, Observable, startWith, switchMap } from 'rxjs';
+import {
+  concat,
+  from,
+  interval,
+  map,
+  merge,
+  Observable,
+  of,
+  switchMap,
+} from 'rxjs';
 import { PublicCsrfGuard, Roles, SessionGuard } from '../auth/auth';
 import { clientIp } from '../http/client-ip';
 import {
@@ -222,10 +231,24 @@ export class PublicQueueController {
         if (!tokenHash) {
           return from([{ data: { error: 'Нет активного талона' } }]);
         }
-        return this.updates.changes.pipe(
-          startWith(undefined),
-          switchMap(() => this.queue.getPublicTicketByHash(tokenHash)),
-          map((data) => ({ data })),
+        return from(this.queue.getPublicTicketStream(tokenHash)).pipe(
+          switchMap((initial) =>
+            merge(
+              concat(
+                of({ data: initial.data, retry: 3_000 }),
+                this.updates.forTicket(initial.ticketId).pipe(
+                  switchMap(() => this.queue.getPublicTicketByHash(tokenHash)),
+                  map((data) => ({ data })),
+                ),
+              ),
+              interval(25_000).pipe(
+                map(() => ({
+                  type: 'heartbeat',
+                  data: { time: Date.now() },
+                })),
+              ),
+            ),
+          ),
         );
       }),
     );
@@ -274,10 +297,14 @@ export class EmployeeQueueController {
   @Sse('events')
   events(@Req() request: Request): Observable<MessageEvent> {
     const user = request.session.user!;
-    return this.updates.changes.pipe(
-      startWith(undefined),
-      switchMap(() => this.queue.getCurrent(user)),
-      map((data) => ({ data })),
+    return merge(
+      concat(of(undefined), this.updates.allTickets()).pipe(
+        switchMap(() => this.queue.getCurrent(user)),
+        map((data) => ({ data })),
+      ),
+      interval(25_000).pipe(
+        map(() => ({ type: 'heartbeat', data: { time: Date.now() } })),
+      ),
     );
   }
 

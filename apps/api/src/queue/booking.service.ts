@@ -84,6 +84,18 @@ export class BookingService {
     return zonedDateTime(date, time, timeZone);
   }
 
+  dayBounds(date: string, timeZone = 'Europe/Moscow') {
+    const start = this.slotToDate(date, '00:00', timeZone);
+    const [year, month, day] = date.split('-').map(Number);
+    const nextDate = new Date(Date.UTC(year, month - 1, day + 1))
+      .toISOString()
+      .slice(0, 10);
+    return {
+      start,
+      end: this.slotToDate(nextDate, '00:00', timeZone),
+    };
+  }
+
   async listAvailableSlots(
     siteId: string,
     date: string,
@@ -96,12 +108,7 @@ export class BookingService {
       active: true,
     });
     const timeZone = site?.timezone ?? 'Europe/Moscow';
-    const dayStart = this.slotToDate(date, '00:00', timeZone);
-    const [year, month, day] = date.split('-').map(Number);
-    const nextDate = new Date(Date.UTC(year, month - 1, day + 1))
-      .toISOString()
-      .slice(0, 10);
-    const dayEnd = this.slotToDate(nextDate, '00:00', timeZone);
+    const { start: dayStart, end: dayEnd } = this.dayBounds(date, timeZone);
     const duration = this.durationFor(country);
     const candidates = this.generateSlotTimes(country);
     const now = Date.now();
@@ -345,11 +352,7 @@ export class BookingService {
   async getDaySchedule(siteId: string, date: string) {
     this.assertWeekday(date);
 
-    const dayStart = this.slotToDate(date, '00:00');
-    const [year, month, day] = date.split('-').map(Number);
-    const next = new Date(Date.UTC(year, month - 1, day + 1));
-    const nextDate = next.toISOString().slice(0, 10);
-    const dayEnd = this.slotToDate(nextDate, '00:00');
+    const { start: dayStart, end: dayEnd } = this.dayBounds(date);
 
     const tickets = await this.dataSource.getRepository(Ticket).find({
       where: {

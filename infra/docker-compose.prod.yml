@@ -9,10 +9,10 @@ services:
         NGINX_CONF: infra/nginx.prod.conf
     ports:
       - "18080:18080"
+    mem_limit: 64m
+    pids_limit: 50
     depends_on:
       api:
-        condition: service_healthy
-      keycloak:
         condition: service_healthy
     restart: unless-stopped
 
@@ -24,7 +24,7 @@ services:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=256
       PORT: 3000
-      DB_SYNCHRONIZE: "true"
+      DB_SYNCHRONIZE: "false"
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       ENABLE_OPENAPI: "false"
       ALLOW_LOCALHOST_CORS: ${ALLOW_LOCALHOST_CORS:-true}
@@ -54,20 +54,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      keycloak:
-        condition: service_healthy
     healthcheck:
       test:
         [
           "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:3000/api').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:3000/api/health/ready",
         ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 18
+      retries: 5
       start_period: 45s
+    mem_limit: 384m
+    pids_limit: 100
     restart: unless-stopped
 
   postgres:
@@ -81,7 +83,7 @@ services:
       - -c
       - shared_buffers=64MB
       - -c
-      - max_connections=50
+      - max_connections=30
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -89,6 +91,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 256m
+    pids_limit: 100
     restart: unless-stopped
 
   redis:
@@ -98,11 +102,11 @@ services:
     command:
       - redis-server
       - --appendonly
-      - "yes"
+      - "no"
       - --maxmemory
-      - 64mb
+      - 96mb
       - --maxmemory-policy
-      - noeviction
+      - volatile-lru
       - --requirepass
       - ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
     volumes:
@@ -120,48 +124,74 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 128m
+    pids_limit: 50
     restart: unless-stopped
 
+  keycloak-db-init:
+    image: postgres:17-alpine
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    command:
+      [
+        "psql",
+        "-h",
+        "postgres",
+        "-U",
+        "ticket",
+        "-d",
+        "ticket",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        "CREATE SCHEMA IF NOT EXISTS keycloak AUTHORIZATION ticket",
+      ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   keycloak:
-    image: quay.io/keycloak/keycloak:26.3
-    command: start --import-realm --http-enabled=true --hostname-strict=false
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.keycloak
+    command: start --optimized --import-realm --http-enabled=true --hostname-strict=false
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set KC_BOOTSTRAP_ADMIN_PASSWORD in .env}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?set OIDC_CLIENT_SECRET in .env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/ticket
+      KC_DB_USERNAME: ticket
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_SCHEMA: keycloak
+      KC_DB_POOL_INITIAL_SIZE: "2"
+      KC_DB_POOL_MIN_SIZE: "2"
+      KC_DB_POOL_MAX_SIZE: "10"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_PROXY_HEADERS: xforwarded
-      JAVA_OPTS_KC_HEAP: "-Xms128m -Xmx384m"
+      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx384m"
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
       - ./keycloak-theme/ticket:/opt/keycloak/themes/ticket:ro
     healthcheck:
       test:
         [
-          "CMD",
-          "java",
-          "/opt/keycloak/data/import/HealthCheck.java",
-          "http://127.0.0.1:8080/realms/ticket-system",
+          "CMD-SHELL",
+          "bash -ec \"exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3\"",
         ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 30
-      start_period: 90s
-    restart: unless-stopped
-
-  keycloak-init:
-    image: quay.io/keycloak/keycloak:26.3
-    entrypoint: ["/bin/bash", "/opt/keycloak/data/import/ensure-redirects.sh"]
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
-    volumes:
-      - ./keycloak:/opt/keycloak/data/import:ro
+      retries: 10
+      start_period: 120s
+    mem_limit: 700m
+    pids_limit: 250
     depends_on:
-      keycloak:
-        condition: service_healthy
-    restart: on-failure
+      keycloak-db-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 volumes:
   postgres-data:

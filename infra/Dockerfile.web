@@ -5,8 +5,7 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/client-web/package.json ./apps/client-web/package.json
 COPY apps/staff-web/package.json ./apps/staff-web/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline
+RUN npm ci --no-audit --no-fund
 
 COPY apps/client-web ./apps/client-web
 COPY apps/staff-web ./apps/staff-web

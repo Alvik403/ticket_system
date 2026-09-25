@@ -25,7 +25,7 @@
       "name": "Ticket staff BFF",
       "enabled": true,
       "publicClient": false,
-      "secret": "replace-in-production",
+      "secret": "${OIDC_CLIENT_SECRET}",
       "standardFlowEnabled": true,
       "redirectUris": [
         "http://localhost:3000/api/auth/callback",

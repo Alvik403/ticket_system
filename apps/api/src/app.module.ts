@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { HealthController } from './health.controller';
 import {
   AuthController,
   OidcService,
@@ -14,9 +14,7 @@ import {
 import { KeycloakAdminService } from './auth/keycloak-admin.service';
 import { AppThrottlerGuard } from './http/app-throttler.guard';
 import { postgresConnectionUrl } from './http/connection-urls';
-import { AddPersonalDataConsentAt1735689600000 } from './migrations/1735689600000-AddPersonalDataConsentAt';
-import { AddCheckInAndSlotHold1777900000000 } from './migrations/1777900000000-AddCheckInAndSlotHold';
-import { AddDepartureArrivalDates1778000000000 } from './migrations/1778000000000-AddDepartureArrivalDates';
+import { appMigrations } from './migrations';
 import {
   BlockedSlot,
   Desk,
@@ -37,10 +35,7 @@ import {
 } from './queue/queue.controller';
 import { BookingService } from './queue/booking.service';
 import { QueueService } from './queue/queue.service';
-import {
-  QueueUpdatesInterceptor,
-  QueueUpdatesService,
-} from './queue/queue-updates.service';
+import { QueueUpdatesService } from './queue/queue-updates.service';
 import { RateLimitService } from './queue/rate-limit.service';
 import { RetentionService } from './queue/retention.service';
 
@@ -50,7 +45,7 @@ import { RetentionService } from './queue/retention.service';
       isGlobal: true,
       envFilePath: ['../../.env', '.env'],
     }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 3_000 }]),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -74,17 +69,20 @@ import { RetentionService } from './queue/retention.service';
         ],
         synchronize: config.get('DB_SYNCHRONIZE', 'false') === 'true',
         migrationsRun: config.get('DB_SYNCHRONIZE', 'false') !== 'true',
-        migrations: [
-          AddPersonalDataConsentAt1735689600000,
-          AddCheckInAndSlotHold1777900000000,
-          AddDepartureArrivalDates1778000000000,
-        ],
+        migrations: appMigrations,
+        extra: {
+          max: 10,
+          connectionTimeoutMillis: 5_000,
+          statement_timeout: 15_000,
+          query_timeout: 20_000,
+        },
         logging: false,
       }),
     }),
   ],
   controllers: [
     AppController,
+    HealthController,
     AuthController,
     PublicQueueController,
     EmployeeQueueController,
@@ -92,7 +90,6 @@ import { RetentionService } from './queue/retention.service';
     AuditorQueueController,
   ],
   providers: [
-    AppService,
     OidcService,
     SessionGuard,
     PublicCsrfGuard,
@@ -102,7 +99,6 @@ import { RetentionService } from './queue/retention.service';
     RetentionService,
     KeycloakAdminService,
     QueueUpdatesService,
-    { provide: APP_INTERCEPTOR, useClass: QueueUpdatesInterceptor },
     { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
 })

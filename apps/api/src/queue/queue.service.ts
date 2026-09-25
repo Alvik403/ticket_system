@@ -9,7 +9,14 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import { DataSource, EntityManager, In, Like, QueryFailedError } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  In,
+  Like,
+  QueryFailedError,
+  Raw,
+} from 'typeorm';
 import {
   Assignment,
   AuditEvent,
@@ -36,7 +43,6 @@ import {
   type AssignmentAction,
 } from './queue.rules';
 import { BookingService } from './booking.service';
-import { QueueUpdatesService } from './queue-updates.service';
 import { RateLimitService } from './rate-limit.service';
 
 @Injectable()
@@ -49,7 +55,6 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     private readonly booking: BookingService,
     private readonly rateLimit: RateLimitService,
     private readonly keycloakAdmin: KeycloakAdminService,
-    private readonly updates: QueueUpdatesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -334,6 +339,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getPublicTicketByHash(tokenHash: string) {
+    return (await this.getPublicTicketStream(tokenHash)).data;
+  }
+
+  async getPublicTicketStream(tokenHash: string) {
     const ticket = await this.dataSource.getRepository(Ticket).findOne({
       where: { accessTokenHash: tokenHash },
       relations: {
@@ -344,6 +353,13 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!ticket) throw new NotFoundException('Талон не найден');
+    return {
+      ticketId: ticket.id,
+      data: await this.publicTicketView(ticket),
+    };
+  }
+
+  private async publicTicketView(ticket: Ticket) {
     const active = ticket.assignments?.find((assignment) => assignment.active);
     const served = ticket.assignments
       ?.filter((assignment) => assignment.completedAt)
@@ -738,20 +754,19 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     }
     const employee = await this.ensureEmployee(user);
     if (!employee.site?.id) return [];
+    const { start, end } = this.booking.dayBounds(date, employee.site.timezone);
     const tickets = await this.dataSource.getRepository(Ticket).find({
-      where: { site: { id: employee.site.id } },
+      where: {
+        site: { id: employee.site.id },
+        scheduledAt: Raw(
+          (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+          { dayStart: start, dayEnd: end },
+        ),
+      },
       relations: { serviceType: true, reservedDesk: true },
       order: { scheduledAt: 'ASC', createdAt: 'ASC' },
     });
-    return tickets
-      .filter(
-        (ticket) =>
-          ticket.scheduledAt &&
-          ticket.scheduledAt.toLocaleDateString('en-CA', {
-            timeZone: 'Europe/Moscow',
-          }) === date,
-      )
-      .map((ticket) => this.managerBookingView(ticket));
+    return tickets.map((ticket) => this.managerBookingView(ticket));
   }
 
   private managerBookingView(ticket: Ticket) {
@@ -887,20 +902,20 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     const date = start.toLocaleDateString('en-CA', {
       timeZone: 'Europe/Moscow',
     });
+    const { start: dayStart, end: dayEnd } = this.booking.dayBounds(date);
     const tickets = await this.dataSource.getRepository(Ticket).find({
-      where: { site: { id: siteId }, status: In(['BOOKED', 'NO_SHOW']) },
+      where: {
+        site: { id: siteId },
+        status: In(['BOOKED', 'NO_SHOW']),
+        scheduledAt: Raw(
+          (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+          { dayStart, dayEnd },
+        ),
+      },
       relations: { serviceType: true, reservedDesk: true },
       order: { scheduledAt: 'ASC' },
     });
-    return tickets
-      .filter(
-        (ticket) =>
-          ticket.scheduledAt &&
-          ticket.scheduledAt.toLocaleDateString('en-CA', {
-            timeZone: 'Europe/Moscow',
-          }) === date,
-      )
-      .map((ticket) => this.staffTicketView(ticket));
+    return tickets.map((ticket) => this.staffTicketView(ticket));
   }
 
   private async getQueueSummary(siteId?: string) {
@@ -1633,7 +1648,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async dispatchAvailable(): Promise<void> {
-    let changed = await this.recoverBreakAssignments();
+    await this.recoverBreakAssignments();
     const employees = await this.dataSource.getRepository(Employee).find({
       where: { status: 'AVAILABLE' },
       relations: { site: true, desk: true },
@@ -1652,11 +1667,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
               relations: { site: true, desk: true },
             })
           : null;
-        if (locked && (await this.assignNext(manager, locked))) changed++;
+        if (locked) await this.assignNext(manager, locked);
       });
     }
-    changed += await this.expireCalls();
-    if (changed > 0) this.updates.notify();
+    await this.expireCalls();
   }
 
   private async expireCalls(): Promise<number> {
@@ -1971,16 +1985,25 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     if (!LIVE_QUEUE_STATUSES.includes(ticket.status)) {
       return { queuePosition: 0, estimatedWaitMinutes: 0 };
     }
-    const peers = await this.dataSource.getRepository(Ticket).find({
-      where: LIVE_QUEUE_STATUSES.map((status) => ({
-        site: { id: ticket.site.id },
-        status,
-      })),
-    });
-    const rank = (item: Ticket) =>
-      item.priority * 1_000_000_000_000 -
-      (item.scheduledAt?.getTime() ?? item.createdAt.getTime());
-    const ahead = peers.filter((item) => rank(item) > rank(ticket)).length;
+    const effectiveTime = ticket.scheduledAt ?? ticket.createdAt;
+    const ahead = await this.dataSource
+      .getRepository(Ticket)
+      .createQueryBuilder('peer')
+      .where('peer.siteId = :siteId', { siteId: ticket.site.id })
+      .andWhere('peer.status IN (:...statuses)', {
+        statuses: LIVE_QUEUE_STATUSES,
+      })
+      .andWhere(
+        `(
+          peer.priority > :priority OR
+          (
+            peer.priority = :priority AND
+            COALESCE(peer."scheduledAt", peer."createdAt") < :effectiveTime
+          )
+        )`,
+        { priority: ticket.priority, effectiveTime },
+      )
+      .getCount();
     const position = ahead + 1;
     return {
       queuePosition: position,
@@ -2047,6 +2070,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     await manager.save(
       manager.create(TicketEvent, { ticketId, type, data, actorSubject }),
     );
+    await manager.query(`SELECT pg_notify('ticket_updates', $1)`, [ticketId]);
   }
 
   private async audit(
