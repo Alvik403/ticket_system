@@ -29,3 +29,22 @@ export function originJoin(origin: string, path: string): string {
   const pathname = path.startsWith('/') ? path : `/${path}`;
   return `${origin.replace(/\/$/, '')}${pathname}`;
 }
+
+export function staffAppUrl(origin: string, configured?: string): string {
+  let path = '/staff/';
+  if (configured) {
+    try {
+      const configuredPath = new URL(configured, origin).pathname;
+      if (configuredPath.startsWith('/staff')) {
+        path = configuredPath.endsWith('/')
+          ? configuredPath
+          : `${configuredPath}/`;
+      }
+    } catch {
+      if (configured.startsWith('/staff')) {
+        path = configured.endsWith('/') ? configured : `${configured}/`;
+      }
+    }
+  }
+  return originJoin(origin, path);
+}

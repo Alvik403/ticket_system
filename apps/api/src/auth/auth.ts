@@ -36,6 +36,7 @@ import {
   originJoin,
   requestPublicOrigin,
   rewriteUrlOrigin,
+  staffAppUrl,
 } from '../http/public-origin';
 import { decodeJwtPayload, extractApplicationRoles } from './auth.utils';
 import { tokensEqual } from './csrf';
@@ -228,12 +229,7 @@ export class AuthController {
   ) {}
 
   private staffAppUrl(origin: string): string {
-    const configured = this.config.getOrThrow<string>('STAFF_APP_URL');
-    try {
-      return originJoin(origin, new URL(configured).pathname);
-    } catch {
-      return originJoin(origin, '/staff/');
-    }
+    return staffAppUrl(origin, this.config.get<string>('STAFF_APP_URL'));
   }
 
   private async oidcConfiguration(origin: string): Promise<Configuration> {

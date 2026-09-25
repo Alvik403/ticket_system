@@ -35,7 +35,7 @@
       ],
       "webOrigins": ["*"],
       "attributes": {
-        "post.logout.redirect.uris": "+"
+        "post.logout.redirect.uris": "*"
       },
       "protocolMappers": [
         {

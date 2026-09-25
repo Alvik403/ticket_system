@@ -3,6 +3,7 @@ import {
   originJoin,
   requestPublicOrigin,
   rewriteUrlOrigin,
+  staffAppUrl,
 } from './public-origin';
 
 function fakeRequest(headers: Record<string, string>, protocol = 'http') {
@@ -56,5 +57,22 @@ describe('originJoin', () => {
     expect(originJoin('http://queue.example:18080/', '/staff/')).toBe(
       'http://queue.example:18080/staff/',
     );
+  });
+});
+
+describe('staffAppUrl', () => {
+  it('keeps staff on /staff/ when env points at a Vite origin', () => {
+    expect(
+      staffAppUrl('http://94.231.221.214:18080', 'http://localhost:5174'),
+    ).toBe('http://94.231.221.214:18080/staff/');
+  });
+
+  it('uses the configured staff path on the request host', () => {
+    expect(
+      staffAppUrl(
+        'http://94.231.221.214:18080',
+        'http://localhost:18080/staff/',
+      ),
+    ).toBe('http://94.231.221.214:18080/staff/');
   });
 });
