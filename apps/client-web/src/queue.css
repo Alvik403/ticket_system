@@ -5,7 +5,16 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; }
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
 button, select, input, textarea { font: inherit; }
 
 .app-shell { min-height: 100vh; }
@@ -91,6 +100,11 @@ button, select, input, textarea { font: inherit; }
   text-align: center;
   font-size: 11px;
   color: #94a3b8;
+}
+.steps-bar li small {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
 }
 .steps-bar li span {
   width: 28px;
@@ -223,7 +237,7 @@ textarea { min-height: 120px; resize: vertical; }
   background: #f8fbff;
 }
 .slot-grid-compact {
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   max-width: 100%;
 }
 .travel-dates-row {
@@ -296,6 +310,7 @@ textarea { min-height: 120px; resize: vertical; }
   font-size: 10px;
   font-weight: 700;
   color: #64748b;
+  white-space: nowrap;
 }
 .calendar-day {
   height: 32px;
@@ -339,11 +354,13 @@ textarea { min-height: 120px; resize: vertical; }
 .slot {
   border: 1px solid #cbd5e1;
   border-radius: 10px;
-  padding: 12px 8px;
+  padding: 12px 4px;
   background: #fff;
   color: #0f172a;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
 }
 .slot.selected {
   border-color: #2563a8;
@@ -363,6 +380,9 @@ textarea { min-height: 120px; resize: vertical; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+.step-actions-single {
+  grid-template-columns: 1fr;
 }
 button {
   border: 0;
@@ -487,6 +507,11 @@ button.secondary { background: #e8f1fb; color: #1e518c; }
 .ticket-actions {
   width: 100%;
   margin-top: 20px;
+  display: grid;
+  gap: 10px;
+}
+.ticket-actions button {
+  width: 100%;
 }
 .ticket-card .notice-banner,
 .ticket-card .desk-banner {
@@ -663,38 +688,159 @@ button.danger:hover:not(:disabled) { background: #b91c1c; }
 }
 
 @media (max-width: 720px) {
-  .site-header { padding: 16px 16px calc(12px + env(safe-area-inset-top)); }
+  .site-header {
+    padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+  }
+  .brand strong { font-size: 16px; }
+  .brand span {
+    font-size: 12px;
+    line-height: 1.35;
+  }
   .tabs {
     gap: 4px;
     padding: 8px 12px 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
   .tabs button {
-    flex: 1 1 auto;
-    min-height: 44px;
-    padding: 10px 14px;
+    flex: 1 1 0;
+    min-height: 42px;
+    padding: 10px 12px;
     white-space: nowrap;
   }
   .page {
-    width: calc(100% - 24px);
-    padding: 12px 0 calc(24px + env(safe-area-inset-bottom));
+    width: min(100% - 20px, 960px);
+    padding: 12px 0 calc(20px + env(safe-area-inset-bottom));
   }
   .panel { padding: 16px; border-radius: 14px; }
-  .steps-bar { grid-template-columns: 1fr 1fr; }
-  .choice-grid, .step-actions, .name-grid, .modal-actions { grid-template-columns: 1fr; }
+  .panel h2 { margin: 0 0 4px; font-size: 20px; }
+  .steps-bar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .steps-bar li { gap: 4px; }
+  .steps-bar li small {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.15;
+    max-width: 100%;
+  }
+  .choice-grid { gap: 10px; }
+  .choice-card {
+    min-height: 72px;
+    padding: 16px 12px;
+  }
+  .choice-card strong { font-size: 20px; }
+  .name-grid,
+  .modal-actions { grid-template-columns: 1fr; }
+  .step-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    margin: 4px -16px -16px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid #e8eef5;
+  }
   .panel-head { flex-direction: column; align-items: stretch; }
   .field-select-inline { width: 100%; margin-left: 0; }
-  .booking-datetime-layout { flex-direction: column; }
-  .booking-datetime-layout .slot-section { max-width: none; }
-  .booking-calendar { width: 100%; max-width: none; }
+  .booking-datetime-layout {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .booking-datetime-layout .slot-section {
+    max-width: none;
+    width: 100%;
+  }
+  .booking-calendar {
+    width: 100%;
+    max-width: none;
+    padding: 8px;
+  }
+  .calendar-head strong { font-size: 13px; }
+  .calendar-weekdays { gap: 2px; }
+  .calendar-grid { gap: 3px; }
+  .calendar-day {
+    height: 34px;
+    min-height: 34px;
+    font-size: 12px;
+  }
   .travel-dates-row {
     grid-template-columns: 1fr;
     width: 100%;
   }
-  .slot { min-height: 44px; }
+  .slot-grid,
+  .slot-grid-compact {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    max-height: min(46vh, 340px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .slot {
+    min-height: 40px;
+    padding: 8px 2px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+  input, textarea, .select-control {
+    font-size: 16px;
+  }
+  .hold-timer {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .hold-timer button {
+    min-height: 36px;
+    margin-left: auto;
+  }
+  .summary div {
+    grid-template-columns: minmax(96px, 34%) 1fr;
+    align-items: start;
+    gap: 8px 12px;
+  }
   .ticket-card { padding: 20px 16px 16px; }
-  .ticket-number { font-size: 28px; }
+  .ticket-number { font-size: 36px; }
+  .ticket-client-name,
+  .ticket-schedule {
+    overflow-wrap: anywhere;
+  }
+  .desk-banner strong { font-size: 22px; }
   .lookup-form { max-width: none; }
+  .modal-dialog { width: min(100%, 400px); }
   button { min-height: 44px; }
+  .calendar-nav,
+  .calendar-day,
+  .slot {
+    min-height: 36px;
+  }
+  .calendar-day { min-height: 36px; }
+}
+
+@media (max-width: 400px) {
+  .steps-bar li span {
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
+  }
+  .steps-bar li small {
+    font-size: 0;
+    line-height: 0;
+  }
+  .steps-bar li small::after {
+    content: attr(data-short);
+    font-size: 10px;
+    line-height: 1.15;
+    color: inherit;
+  }
+  .slot-grid,
+  .slot-grid-compact {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-height: min(38vh, 280px);
+  }
+  .ticket-number { font-size: 32px; }
 }

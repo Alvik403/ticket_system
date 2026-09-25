@@ -609,10 +609,15 @@ function App() {
           ) : (
             <section className="panel">
               <ol className="steps-bar">
-                {['Страна', 'Дата и время', 'Данные', 'Подтверждение'].map((label, index) => (
-                  <li key={label} className={step > index ? 'done' : step === index + 1 ? 'current' : ''}>
+                {[
+                  { label: 'Страна', short: 'Страна' },
+                  { label: 'Дата и время', short: 'Время' },
+                  { label: 'Данные', short: 'Данные' },
+                  { label: 'Подтверждение', short: 'Готово' },
+                ].map((item, index) => (
+                  <li key={item.label} className={step > index ? 'done' : step === index + 1 ? 'current' : ''}>
                     <span>{index + 1}</span>
-                    {label}
+                    <small data-short={item.short}>{item.label}</small>
                   </li>
                 ))}
               </ol>
@@ -636,11 +641,13 @@ function App() {
                       <strong>Китай</strong>
                     </button>
                   </div>
-                  <button disabled={!canNextStep2} onClick={() => {
-                    setLoadingSlots(true)
-                    setSlots([])
-                    setStep(2)
-                  }}>Далее</button>
+                  <div className="step-actions step-actions-single">
+                    <button disabled={!canNextStep2} onClick={() => {
+                      setLoadingSlots(true)
+                      setSlots([])
+                      setStep(2)
+                    }}>Далее</button>
+                  </div>
                 </div>
               )}
 
