@@ -37,6 +37,18 @@ describe('requestPublicOrigin', () => {
       ),
     ).toBe('http://localhost:18080');
   });
+
+  it('keeps login on http when a trusted cookie is not required', () => {
+    expect(
+      requestPublicOrigin(
+        fakeRequest({
+          host: '94.231.221.214:18080',
+          'x-forwarded-proto': 'https',
+        }),
+        { forceHttp: true },
+      ),
+    ).toBe('http://94.231.221.214:18080');
+  });
 });
 
 describe('rewriteUrlOrigin', () => {

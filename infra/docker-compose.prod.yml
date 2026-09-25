@@ -176,6 +176,7 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_PROXY_HEADERS: xforwarded
       JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx384m"
     volumes:

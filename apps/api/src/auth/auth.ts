@@ -232,6 +232,15 @@ export class AuthController {
     return staffAppUrl(origin, this.config.get<string>('STAFF_APP_URL'));
   }
 
+  private publicOrigin(request: Request): string {
+    const cookieSecure =
+      this.config.get(
+        'COOKIE_SECURE',
+        this.config.get('NODE_ENV') === 'production' ? 'true' : 'false',
+      ) === 'true';
+    return requestPublicOrigin(request, { forceHttp: !cookieSecure });
+  }
+
   private async oidcConfiguration(origin: string): Promise<Configuration> {
     try {
       return await this.oidc.getConfiguration(origin);
@@ -245,7 +254,7 @@ export class AuthController {
     @Req() request: Request,
     @Res() response: Response,
   ): Promise<void> {
-    const origin = requestPublicOrigin(request);
+    const origin = this.publicOrigin(request);
     const redirectUri = originJoin(origin, '/api/auth/callback');
     const verifier = randomPKCECodeVerifier();
     const state = randomState();
@@ -271,7 +280,7 @@ export class AuthController {
   ): Promise<void> {
     const pending = request.session.oidc;
     if (!pending) throw new UnauthorizedException('Сессия входа истекла');
-    const origin = requestPublicOrigin(request);
+    const origin = this.publicOrigin(request);
     const callbackUrl = new URL(
       `${origin}${request.originalUrl.startsWith('/') ? '' : '/'}${request.originalUrl}`,
     );
@@ -337,7 +346,7 @@ export class AuthController {
     @Req() request: Request,
     @Res() response: Response,
   ): Promise<void> {
-    const origin = requestPublicOrigin(request);
+    const origin = this.publicOrigin(request);
     const staffUrl = this.staffAppUrl(origin);
     const idToken = request.session.idToken;
     const secureCookies =

@@ -4,10 +4,13 @@ function firstHeaderValue(value: string | undefined): string {
   return (value ?? '').split(',')[0].trim();
 }
 
-export function requestPublicOrigin(request: Request): string {
-  const proto = firstHeaderValue(
-    request.get('x-forwarded-proto') ?? request.protocol,
-  );
+export function requestPublicOrigin(
+  request: Request,
+  options?: { forceHttp?: boolean },
+): string {
+  const proto = options?.forceHttp
+    ? 'http'
+    : firstHeaderValue(request.get('x-forwarded-proto') ?? request.protocol);
   const host = firstHeaderValue(
     request.get('x-forwarded-host') ?? request.get('host'),
   );
