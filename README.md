@@ -68,10 +68,9 @@ git clone https://github.com/Alvik403/ticket_system.git
 cd ticket_system
 cp .env.example .env
 # заполнить POSTGRES_PASSWORD, REDIS_PASSWORD, SESSION_SECRET,
-# OIDC_CLIENT_SECRET, KC_BOOTSTRAP_ADMIN_PASSWORD,
-# PUBLIC_ORIGIN=https://queue.example.ru
-# положить TLS: infra/certs/fullchain.pem и infra/certs/privkey.pem
+# OIDC_CLIENT_SECRET, KC_BOOTSTRAP_ADMIN_PASSWORD
 # опционально STAFF_ADMIN_USERNAME и STAFF_ADMIN_PASSWORD — первый ADMIN
+# PUBLIC_ORIGIN не обязателен: скрипт сам подставит https://<публичный-IP>
 chmod +x infra/prod-up.sh
 sudo bash infra/prod-up.sh
 ```
@@ -81,8 +80,11 @@ sudo bash infra/prod-up.sh
   схеме `keycloak`, поэтому созданные сотрудники переживают пересоздание контейнера.
 - Схема API создаётся и обновляется версионированными миграциями;
   `DB_SYNCHRONIZE=false`.
-- `COOKIE_SECURE=true`, CORS только с `PUBLIC_ORIGIN` (и CLIENT_ORIGIN/STAFF_ORIGIN, если заданы).
-- HTTP `:80` только редиректит на HTTPS; приложение слушает `:443` с доверенным сертификатом, без самоподписанного.
+- `COOKIE_SECURE=true`, CORS и OIDC callback берутся из `PUBLIC_ORIGIN`.
+- HTTP `:80` только редиректит на HTTPS; приложение слушает `:443`.
+  Если сертификатов нет, `prod-up.sh` выпускает самоподписанный на IP сервера.
+  Для домена задайте `PUBLIC_ORIGIN=https://ваш.домен` и положите доверенные
+  файлы в `infra/certs/`.
 - Демо-учётки Keycloak в production не импортируются; `redirectUris` и `webOrigins` без `*`.
 - Пароли без пробелов, `$` и `#`.
 - `prod-up.sh` собирает образы последовательно, чтобы не исчерпать 2 ГБ RAM.
