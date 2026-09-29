@@ -28,7 +28,7 @@ SELECT gen_random_uuid(), label, country, true, site.id
        (VALUES
           ('Стол РФ-1', 'RF'),
           ('Стол РФ-2', 'RF'),
-          ('Стол Китай', 'CN')
+          ('Стол Заграничная', 'CN')
        ) AS desks(label, country)
  WHERE site.code = 'MAIN';
 

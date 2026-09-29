@@ -13,7 +13,7 @@ export const ticketStatusLabel: Record<string, string> = {
 
 export const countryLabel: Record<'RF' | 'CN', string> = {
   RF: 'РФ',
-  CN: 'Китай',
+  CN: 'Заграничная',
 }
 
 export const ticketSteps = [

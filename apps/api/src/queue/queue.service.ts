@@ -77,7 +77,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       await this.dataSource.getRepository(Desk).save([
         { label: 'Стол РФ-1', country: 'RF' as const, site },
         { label: 'Стол РФ-2', country: 'RF' as const, site },
-        { label: 'Стол Китай', country: 'CN' as const, site },
+        { label: 'Стол Заграничная', country: 'CN' as const, site },
       ]);
     }
     this.dispatchTimer = setInterval(() => {
@@ -1535,7 +1535,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
 
         if (employee.country && employee.country !== desk.country) {
           throw new BadRequestException(
-            'Сотрудник работает с другим направлением (РФ/Китай)',
+            'Сотрудник работает с другим направлением (РФ/Заграничная)',
           );
         }
 

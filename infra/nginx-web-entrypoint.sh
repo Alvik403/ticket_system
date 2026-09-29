@@ -2,13 +2,12 @@
 set -eu
 
 cert_dir="${NGINX_CERT_DIR:-/etc/nginx/certs}"
-mkdir -p "$cert_dir"
 
-if [ ! -s "$cert_dir/fullchain.pem" ] || [ ! -s "$cert_dir/privkey.pem" ]; then
-  openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
-    -keyout "$cert_dir/privkey.pem" \
-    -out "$cert_dir/fullchain.pem" \
-    -subj "/CN=${NGINX_CERT_CN:-ticket-system}"
+if [ "${REQUIRE_TLS_CERTS:-false}" = "true" ]; then
+  if [ ! -s "$cert_dir/fullchain.pem" ] || [ ! -s "$cert_dir/privkey.pem" ]; then
+    echo "Нужны доверенные TLS-файлы fullchain.pem и privkey.pem в infra/certs" >&2
+    exit 1
+  fi
 fi
 
 exec nginx -g 'daemon off;'

@@ -52,26 +52,26 @@ docker compose -f infra/docker-compose.yml up --build -d
 площадки и не создаёт walk-in талон. QR генерируется утверждённым
 офлайн-инструментом и не содержит секретов или персональных данных.
 
-Тестовые учётные записи:
+Тестовые учётные записи (только локальный запуск, в production не импортируются):
 
 - администратор: `admin` / `Admin123!`;
 - сотрудник: `rf1` / `Employee123!`;
 - аудитор: `auditor` / `Auditor123!`.
 
-Они предназначены только для локальной проверки и должны быть удалены или
-заменены перед пилотной и промышленной эксплуатацией.
-
 ## Production
 
-Минимум **2 ГБ RAM**, порты `80`, `443` и `18080`. Запуск только из корня
-репозитория, без `--project-directory`.
+Минимум **2 ГБ RAM**, порты `80` (редирект на HTTPS) и `443`. Запуск только из
+корня репозитория, без `--project-directory`.
 
 ```text
 git clone https://github.com/Alvik403/ticket_system.git
 cd ticket_system
 cp .env.example .env
 # заполнить POSTGRES_PASSWORD, REDIS_PASSWORD, SESSION_SECRET,
-# OIDC_CLIENT_SECRET=replace-in-production, KC_BOOTSTRAP_ADMIN_PASSWORD
+# OIDC_CLIENT_SECRET, KC_BOOTSTRAP_ADMIN_PASSWORD,
+# PUBLIC_ORIGIN=https://queue.example.ru
+# положить TLS: infra/certs/fullchain.pem и infra/certs/privkey.pem
+# опционально STAFF_ADMIN_USERNAME и STAFF_ADMIN_PASSWORD — первый ADMIN
 chmod +x infra/prod-up.sh
 sudo bash infra/prod-up.sh
 ```
@@ -81,17 +81,15 @@ sudo bash infra/prod-up.sh
   схеме `keycloak`, поэтому созданные сотрудники переживают пересоздание контейнера.
 - Схема API создаётся и обновляется версионированными миграциями;
   `DB_SYNCHRONIZE=false`.
-- Login и CORS берут Host из запроса; отдельные URL в env не обязательны.
-- Пока нет доверенного сертификата, вход и выход остаются на HTTP:
-  порты `80` и `18080`. TLS только на `443`. `COOKIE_SECURE=true`
-  включайте после домена и Let's Encrypt.
+- `COOKIE_SECURE=true`, CORS только с `PUBLIC_ORIGIN` (и CLIENT_ORIGIN/STAFF_ORIGIN, если заданы).
+- HTTP `:80` только редиректит на HTTPS; приложение слушает `:443` с доверенным сертификатом, без самоподписанного.
+- Демо-учётки Keycloak в production не импортируются; `redirectUris` и `webOrigins` без `*`.
 - Пароли без пробелов, `$` и `#`.
 - `prod-up.sh` собирает образы последовательно, чтобы не исчерпать 2 ГБ RAM.
 - Первый build Keycloak выполняет оптимизацию Quarkus; последующие старты
   используют `start --optimized`. Публичный клиент и API не ждут готовности OIDC.
-- Заменить демо-учётки, включить TOTP для администраторов, WAF,
-  мониторинг и backup. Организационные действия:
-  `docs/security-and-personal-data.md`.
+- Включить TOTP для администраторов, WAF, мониторинг и backup. Организационные
+  действия: `docs/security-and-personal-data.md`.
 
 ## Проверки
 

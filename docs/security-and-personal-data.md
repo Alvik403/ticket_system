@@ -40,14 +40,16 @@
 7. Провести оценку эффективности мер до ввода, оформить акт и повторять
    контроль после существенных изменений.
 8. Для администраторов включить TOTP в Keycloak перед промышленной
-   эксплуатацией. Локальные демо-учётки удалить или сменить пароли.
+   эксплуатацией. Production не импортирует локальные демо-учётки;
+   повторный `prod-up.sh` удаляет уже импортированные записи с email
+   `@example.com`.
 
 ## Технический минимум
 
 - TLS 1.2+, HSTS на ingress, private network для БД/Redis/Keycloak, deny-by-default.
 - Прод-контур: `infra/docker-compose.prod.yml` — без publish портов БД/Redis,
-  без `/admin/` и `/api/docs`, `DB_SYNCHRONIZE=false`. `COOKIE_SECURE=true` только
-  при HTTPS.
+  без `/admin/` и `/api/docs`, `DB_SYNCHRONIZE=false`, `COOKIE_SECURE=true`,
+  HTTPS на `:443`, HTTP `:80` только редирект.
 - KMS/secret manager, ротация секретов, шифрование дисков и backup.
 - OIDC, RBAC (`EMPLOYEE`, `ADMIN`, `AUDITOR`), обязательный TOTP для
   администраторов, отзыв сессий, rate limiting.

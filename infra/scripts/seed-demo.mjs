@@ -66,7 +66,7 @@ try {
   const rfDesks = desksRes.rows.filter((row) => row.country === 'RF');
   const cnDesks = desksRes.rows.filter((row) => row.country === 'CN');
   if (!rfDesks.length || !cnDesks.length) {
-    throw new Error('Нужны столы РФ и Китай');
+    throw new Error('Нужны столы РФ и Заграничная');
   }
 
   await client.query(`

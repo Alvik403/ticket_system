@@ -85,7 +85,7 @@ function formatDateLabel(value: string) {
 }
 
 function countryLabel(country: 'RF' | 'CN') {
-  return country === 'RF' ? 'РФ' : 'Китай'
+  return country === 'RF' ? 'РФ' : 'Заграничная'
 }
 
 async function readApiError(response: Response, fallback: string) {
@@ -514,7 +514,7 @@ function App() {
                         {selectedBooking.arrivalDate ?? '—'}
                       </p>
                       <p className="client-detail">
-                        {selectedBooking.country === 'CN' ? 'Китай' : 'РФ'}
+                        {selectedBooking.country === 'CN' ? 'Заграничная' : 'РФ'}
                         {selectedBooking.deskLabel ? ` · ${selectedBooking.deskLabel}` : ''}
                       </p>
                       <label className="status-field">
@@ -566,7 +566,7 @@ function App() {
                   const detailCountry =
                     typeof row.details?.country === 'string'
                       ? row.details.country === 'CN'
-                        ? 'Китай'
+                        ? 'Заграничная'
                         : 'РФ'
                       : null
                   const detailUsername =
@@ -676,7 +676,7 @@ function App() {
                         onChange={(event) => setNewDeskCountry(event.target.value as 'RF' | 'CN')}
                       >
                         <option value="RF">РФ</option>
-                        <option value="CN">Китай</option>
+                        <option value="CN">Заграничная</option>
                       </select>
                     </label>
                     <div className="desk-create-actions">

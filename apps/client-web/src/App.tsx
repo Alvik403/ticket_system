@@ -610,7 +610,7 @@ function App() {
             <section className="panel">
               <ol className="steps-bar">
                 {[
-                  { label: 'Страна', short: 'Страна' },
+                  { label: 'Направление', short: 'Напр.' },
                   { label: 'Дата и время', short: 'Время' },
                   { label: 'Данные', short: 'Данные' },
                   { label: 'Подтверждение', short: 'Готово' },
@@ -624,7 +624,7 @@ function App() {
 
               {step === 1 && (
                 <div className="step-body">
-                  <h2>Выберите страну</h2>
+                  <h2>Выберите направление</h2>
                   <div className="choice-grid">
                     <button
                       type="button"
@@ -638,7 +638,7 @@ function App() {
                       className={`choice-card${country === 'CN' ? ' selected' : ''}`}
                       onClick={() => setCountry('CN')}
                     >
-                      <strong>Китай</strong>
+                      <strong>Заграничная</strong>
                     </button>
                   </div>
                   <div className="step-actions step-actions-single">
@@ -795,7 +795,7 @@ function App() {
                   <HoldTimer hold={hold} seconds={holdSeconds} onRefresh={() => void refreshHold()} />
                   <dl className="summary">
                     <div><dt>Услуга</dt><dd>Предоставление и сдача маршрутного листа</dd></div>
-                    <div><dt>Страна</dt><dd>{countryLabel[country as Country]}</dd></div>
+                    <div><dt>Направление</dt><dd>{countryLabel[country as Country]}</dd></div>
                     <div><dt>Длительность</dt><dd>{durationLabel}</dd></div>
                     <div><dt>Дата и время</dt><dd>{formatDateLabel(selectedDate)}, {selectedSlot?.time}</dd></div>
                     <div><dt>Фамилия</dt><dd>{lastName}</dd></div>

@@ -9,4 +9,7 @@ coverage/
 .vscode/
 apps/*/node_modules/
 apps/*/dist/
+infra/certs/*.pem
+infra/certs/*.key
+
 

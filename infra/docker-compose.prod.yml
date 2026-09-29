@@ -8,12 +8,13 @@ services:
       args:
         NGINX_CONF: infra/nginx.prod.conf
     entrypoint: ["/nginx-web-entrypoint.sh"]
+    environment:
+      REQUIRE_TLS_CERTS: "true"
     ports:
       - "80:80"
       - "443:443"
-      - "18080:18080"
     volumes:
-      - web-certs:/etc/nginx/certs
+      - ./certs:/etc/nginx/certs:ro
     mem_limit: 64m
     pids_limit: 50
     depends_on:
@@ -30,12 +31,12 @@ services:
       NODE_OPTIONS: --max-old-space-size=256
       PORT: 3000
       DB_SYNCHRONIZE: "false"
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: "true"
       ENABLE_OPENAPI: "false"
-      ALLOW_LOCALHOST_CORS: ${ALLOW_LOCALHOST_CORS:-true}
+      ALLOW_LOCALHOST_CORS: "false"
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-}
       STAFF_ORIGIN: ${STAFF_ORIGIN:-}
-      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       DATABASE_URL: postgresql://ticket:${POSTGRES_PASSWORD}@postgres:5432/ticket
@@ -43,12 +44,12 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       SESSION_SECRET: ${SESSION_SECRET}
-      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:18080/realms/ticket-system}
+      OIDC_ISSUER: ${OIDC_ISSUER:?set OIDC_ISSUER in .env}
       OIDC_INTERNAL_ISSUER: http://keycloak:8080/realms/ticket-system
       OIDC_CLIENT_ID: ticket-staff
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
-      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:18080/api/auth/callback}
-      STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:18080/staff/}
+      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:?set OIDC_CALLBACK_URL in .env}
+      STAFF_APP_URL: ${STAFF_APP_URL:?set STAFF_APP_URL in .env}
       RETENTION_TICKET_DAYS: ${RETENTION_TICKET_DAYS:-90}
       RETENTION_AUDIT_DAYS: ${RETENTION_AUDIT_DAYS:-365}
       KEYCLOAK_ADMIN_URL: http://keycloak:8080
@@ -160,11 +161,16 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.keycloak
-    command: start --optimized --import-realm --http-enabled=true --hostname-strict=false
+    command: start --optimized --import-realm --http-enabled=true
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set KC_BOOTSTRAP_ADMIN_PASSWORD in .env}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?set OIDC_CLIENT_SECRET in .env}
+      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:?set OIDC_CALLBACK_URL in .env}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      STAFF_APP_URL: ${STAFF_APP_URL:?set STAFF_APP_URL in .env}
+      STAFF_ADMIN_USERNAME: ${STAFF_ADMIN_USERNAME:-}
+      STAFF_ADMIN_PASSWORD: ${STAFF_ADMIN_PASSWORD:-}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/ticket
       KC_DB_USERNAME: ticket
@@ -175,12 +181,14 @@ services:
       KC_DB_POOL_MAX_SIZE: "10"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HOSTNAME: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HOSTNAME_STRICT_HTTPS: "true"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
       JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx384m"
     volumes:
-      - ./keycloak:/opt/keycloak/data/import:ro
+      - ./keycloak/ticket-system-realm.json:/opt/keycloak/data/import/ticket-system-realm.json:ro
       - ./keycloak-theme/ticket:/opt/keycloak/themes/ticket:ro
     healthcheck:
       test:
@@ -202,4 +210,3 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  web-certs:
