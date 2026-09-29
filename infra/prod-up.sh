@@ -129,5 +129,11 @@ compose=(docker compose -f infra/docker-compose.prod.yml --env-file .env)
 "${compose[@]}" build api
 "${compose[@]}" build web
 "${compose[@]}" up --no-build -d --wait --force-recreate api keycloak web
-"${compose[@]}" exec -T keycloak /opt/keycloak/keycloak-prod-apply.sh
+"${compose[@]}" exec -T \
+  -e OIDC_CALLBACK_URL \
+  -e STAFF_APP_URL \
+  -e PUBLIC_ORIGIN \
+  -e STAFF_ADMIN_USERNAME \
+  -e STAFF_ADMIN_PASSWORD \
+  keycloak /opt/keycloak/keycloak-prod-apply.sh
 "${compose[@]}" ps

@@ -8,18 +8,21 @@ set -euo pipefail
 : "${KC_BOOTSTRAP_ADMIN_PASSWORD:?}"
 : "${OIDC_CALLBACK_URL:?}"
 : "${STAFF_APP_URL:?}"
+: "${PUBLIC_ORIGIN:?}"
 
 kcadm=/opt/keycloak/bin/kcadm.sh
 
+echo "Keycloak: вход в master"
 "$kcadm" config credentials \
   --server http://127.0.0.1:8080 \
   --realm master \
   --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
-  --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" \
-  > /dev/null
+  --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
 
+echo "Keycloak: sslRequired=external"
 "$kcadm" update realms/ticket-system -s sslRequired=external
 
+echo "Keycloak: поиск клиента ticket-staff"
 client_id="$(
   "$kcadm" get clients -r ticket-system -q clientId=ticket-staff --fields id \
     | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
@@ -30,10 +33,20 @@ if [[ -z "$client_id" ]]; then
   exit 1
 fi
 
-"$kcadm" update "clients/${client_id}" -r ticket-system \
-  -s "redirectUris=[\"${OIDC_CALLBACK_URL}\"]" \
-  -s 'webOrigins=["+"]' \
-  -s "attributes.post.logout.redirect.uris=${STAFF_APP_URL}"
+client_file="$(mktemp)"
+trap 'rm -f "$client_file"' EXIT
+cat > "$client_file" <<EOF
+{
+  "redirectUris": ["${OIDC_CALLBACK_URL}"],
+  "webOrigins": ["${PUBLIC_ORIGIN}"],
+  "attributes": {
+    "post.logout.redirect.uris": "${STAFF_APP_URL}"
+  }
+}
+EOF
+
+echo "Keycloak: callback ${OIDC_CALLBACK_URL}"
+"$kcadm" update "clients/${client_id}" -r ticket-system --merge -f "$client_file"
 
 demo_emails=(
   admin@example.com
