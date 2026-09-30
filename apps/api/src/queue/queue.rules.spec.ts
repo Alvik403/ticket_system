@@ -13,6 +13,15 @@ describe('queue state rules', () => {
     expect(nextTicketStatus('IN_SERVICE', 'COMPLETE')).toBe('COMPLETED');
   });
 
+  it('lets booked clients start service without a call', () => {
+    expect(
+      nextTicketStatus('ASSIGNED', 'START', { hasScheduledSlot: true }),
+    ).toBe('IN_SERVICE');
+    expect(
+      nextTicketStatus('ASSIGNED', 'START', { hasScheduledSlot: false }),
+    ).toBeNull();
+  });
+
   it('rejects invalid or repeated commands', () => {
     expect(nextTicketStatus('WAITING', 'START')).toBeNull();
     expect(nextTicketStatus('BOOKED', 'CALL')).toBeNull();

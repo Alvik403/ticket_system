@@ -17,7 +17,15 @@ const transitions: Record<
 export function nextTicketStatus(
   current: TicketStatus,
   action: AssignmentAction,
+  options?: { hasScheduledSlot?: boolean },
 ): TicketStatus | null {
+  if (
+    action === 'START' &&
+    current === 'ASSIGNED' &&
+    options?.hasScheduledSlot
+  ) {
+    return 'IN_SERVICE';
+  }
   const transition = transitions[action];
   return transition.from.includes(current) ? transition.to : null;
 }

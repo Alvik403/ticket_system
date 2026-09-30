@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -36,6 +37,7 @@ import {
   CreateDeskDto,
   CreateManagerDto,
   CreateTicketDto,
+  CreateWalkInTicketDto,
   EmployeeSelfDeskDto,
   EmployeeStatusDto,
   HoldSlotDto,
@@ -150,6 +152,37 @@ export class PublicQueueController {
     return this.queue.getTicketHistory(hashes);
   }
 
+  @Get('board')
+  board(@Req() request: Request) {
+    const site = queryString(request.query.site);
+    const country = queryString(request.query.country);
+    if (country && !['RF', 'CN'].includes(country)) {
+      throw new BadRequestException('country must be RF or CN');
+    }
+    return this.queue.getPublicBoard(
+      site || undefined,
+      (country as 'RF' | 'CN' | undefined) || undefined,
+    );
+  }
+
+  @Post('tickets/walk-in')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async walkIn(@Body() body: CreateWalkInTicketDto) {
+    if (body.website) {
+      return { ignored: true };
+    }
+    return this.queue.createWalkInTicket({
+      siteId: body.siteId,
+      serviceTypeId: body.serviceTypeId,
+      country: body.country,
+      fullName: body.fullName,
+      scheduledAt: body.scheduledAt,
+      phone: body.phone,
+      departureDate: body.departureDate,
+      arrivalDate: body.arrivalDate,
+    });
+  }
+
   @Post('tickets')
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   async create(@Req() request: Request, @Body() body: CreateTicketDto) {
@@ -167,6 +200,7 @@ export class PublicQueueController {
       serviceTypeId: body.serviceTypeId,
       country: body.country,
       fullName: body.fullName,
+      phone: body.phone,
       departureDate: body.departureDate,
       arrivalDate: body.arrivalDate,
       scheduledAt: body.scheduledAt,
@@ -276,7 +310,7 @@ export class EmployeeQueueController {
   bookings(@Req() request: Request) {
     const date = queryString(request.query.date);
     if (!date) {
-      return [];
+      return { managerCountry: null, bookings: [] };
     }
     return this.queue.listEmployeeBookings(request.session.user!, date);
   }
@@ -441,6 +475,7 @@ export class AdminQueueController {
       body.label,
       body.siteId,
       body.country,
+      body.displayNumber,
     );
   }
 

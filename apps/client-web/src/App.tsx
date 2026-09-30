@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { BookingCalendar } from './BookingCalendar'
 import { countryLabel, ticketStatusLabel } from './labels'
+import {
+  formatPhoneInput,
+  normalizePhoneDigits,
+  PHONE_DIGITS_TOTAL,
+} from './phone'
 import './queue.css'
 
 const API = import.meta.env.VITE_API_URL ?? '/api'
@@ -29,6 +34,11 @@ type Ticket = {
   id?: string
   number: string
   status: string
+  kind?: 'booking' | 'walkIn'
+  statusLabel?: string
+  progressStep?: number
+  progressLabels?: string[]
+  showDesk?: boolean
   serviceName: string
   deskLabel?: string
   createdAt: string
@@ -166,6 +176,7 @@ function App() {
   const [lastName, setLastName] = useState('')
   const [firstName, setFirstName] = useState('')
   const [patronymic, setPatronymic] = useState('')
+  const [phone, setPhone] = useState('')
   const [departureDate, setDepartureDate] = useState('')
   const [arrivalDate, setArrivalDate] = useState('')
   const [ticket, setTicket] = useState<Ticket | null>(null)
@@ -189,7 +200,9 @@ function App() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const wantedSite = new URLSearchParams(window.location.search).get('site')
+        const params = new URLSearchParams(window.location.search)
+        const wantedSite = params.get('site')
+        const wantedDate = params.get('date')
         const [sites, bookingDates, current] = await Promise.all([
           fetchJson<Array<{ id: string; code: string }>>(`${API}/public/sites`),
           fetchJson<string[]>(`${API}/public/booking/dates`),
@@ -212,7 +225,11 @@ function App() {
 
         setSiteId(site.id)
         setDates(bookingDates)
-        setSelectedDate(bookingDates[0])
+        setSelectedDate(
+          wantedDate && bookingDates.includes(wantedDate)
+            ? wantedDate
+            : bookingDates[0],
+        )
         if (service) setServiceTypeId(service)
 
         if (current?.number) {
@@ -302,10 +319,12 @@ function App() {
     () => [lastName, firstName, patronymic].map((part) => part.trim()).filter(Boolean).join(' '),
     [lastName, firstName, patronymic],
   )
+  const phoneNormalized = normalizePhoneDigits(phone)
   const canSubmit =
     lastName.trim().length >= 2 &&
     firstName.trim().length >= 2 &&
-    (country === 'CN' || patronymic.trim().length >= 2) &&
+    patronymic.trim().length >= 2 &&
+    phoneNormalized.length === PHONE_DIGITS_TOTAL &&
     departureDate &&
     arrivalDate &&
     arrivalDate >= departureDate &&
@@ -382,6 +401,7 @@ function App() {
         serviceTypeId,
         country,
         fullName: fullName.trim(),
+        phone: phoneNormalized,
         departureDate,
         arrivalDate,
         scheduledAt: selectedSlot.scheduledAt,
@@ -486,6 +506,7 @@ function App() {
     setLastName('')
     setFirstName('')
     setPatronymic('')
+    setPhone('')
     setDepartureDate('')
     setArrivalDate('')
   }
@@ -515,19 +536,40 @@ function App() {
           ticket && step === 5 ? (
             <section className="panel ticket-panel" aria-live="polite">
               <div className="ticket-card">
-                <span className="ticket-card-label">Ваша запись</span>
+                <span className="ticket-card-label">
+                  {ticket.kind === 'walkIn' ? 'Ваш талон' : 'Ваша запись'}
+                </span>
                 <div className="ticket-number">{ticket.number}</div>
+                <p className="ticket-save-hint muted">
+                  Сфотографируйте или запишите свой талончик
+                </p>
+                {ticket.progressLabels?.length ? (
+                  <ol className="ticket-progress">
+                    {ticket.progressLabels.map((label, index) => (
+                      <li
+                        key={label}
+                        className={
+                          index <= (ticket.progressStep ?? 0) ? 'done' : undefined
+                        }
+                      >
+                        {label}
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
                 <span className={`ticket-status ${ticketStatusClass(ticket.status)}`}>
-                  {ticketStatusLabel[ticket.status] ?? ticket.status}
+                  {ticket.statusLabel ?? ticketStatusLabel[ticket.status] ?? ticket.status}
                 </span>
 
                 <div className="ticket-details">
                   <p className="ticket-client-name">{ticket.fullName}</p>
-                  <p className="ticket-schedule">{formatScheduledDisplay(ticket)}</p>
+                  {ticket.kind !== 'walkIn' && (
+                    <p className="ticket-schedule">{formatScheduledDisplay(ticket)}</p>
+                  )}
                   <p className="ticket-tags">
                     {countryLabel[ticket.country ?? 'RF']} · {ticket.durationMinutes} мин
                   </p>
-                  {ticket.deskLabel && (
+                  {ticket.showDesk && ticket.deskLabel && (
                     <p className="ticket-desk-line">Стол: {ticket.deskLabel}</p>
                   )}
                   {ticket.lookupCode && (
@@ -535,17 +577,25 @@ function App() {
                       Код восстановления: <strong>{ticket.lookupCode}</strong>
                     </p>
                   )}
-                  {ticket.status === 'CHECKED_IN' && ticket.queuePosition ? (
+                  {ticket.kind === 'walkIn' &&
+                  ['CHECKED_IN', 'REQUEUED', 'ASSIGNED'].includes(ticket.status) &&
+                  ticket.queuePosition ? (
                     <p className="ticket-queue">Место в очереди: {ticket.queuePosition}</p>
+                  ) : null}
+                  {ticket.kind === 'booking' &&
+                  ['CHECKED_IN', 'REQUEUED', 'ASSIGNED'].includes(ticket.status) ? (
+                    <p className="ticket-queue muted">
+                      Стол занят — ожидайте, когда освободится
+                    </p>
                   ) : null}
                 </div>
 
                 {ticket.clientNotice && (
                   <div className="notice-banner">{ticket.clientNotice}</div>
                 )}
-                {ticket.status !== 'BOOKED' && ticket.deskLabel && (
+                {ticket.showDesk && ticket.deskLabel && (
                   <div className="desk-banner">
-                    <span>Подойдите к</span>
+                    <span>{ticket.kind === 'walkIn' ? 'Вас вызывают к' : 'Подойдите к'}</span>
                     <strong>{ticket.deskLabel}</strong>
                   </div>
                 )}
@@ -726,15 +776,26 @@ function App() {
                       />
                     </label>
                     <label>
-                      Отчество{country === 'CN' ? ' (необязательно)' : ''}
+                      Отчество
                       <input
                         value={patronymic}
                         onChange={(event) => setPatronymic(event.target.value)}
-                        placeholder={country === 'CN' ? 'Если есть' : 'Иванович'}
+                        placeholder="Иванович"
                         autoComplete="additional-name"
                       />
                     </label>
                   </div>
+                  <label>
+                    Телефон
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      value={phone}
+                      onChange={(event) => setPhone(formatPhoneInput(event.target.value))}
+                      placeholder="+7 (900) 000-00-00"
+                      autoComplete="tel"
+                    />
+                  </label>
                   <div className="travel-dates-row">
                     <label className="date-field" onClick={openDatePicker}>
                       Дата выезда
@@ -801,6 +862,7 @@ function App() {
                     <div><dt>Фамилия</dt><dd>{lastName}</dd></div>
                     <div><dt>Имя</dt><dd>{firstName}</dd></div>
                     <div><dt>Отчество</dt><dd>{patronymic}</dd></div>
+                    <div><dt>Телефон</dt><dd>{phone || '—'}</dd></div>
                     <div><dt>Дата выезда</dt><dd>{departureDate || '—'}</dd></div>
                     <div><dt>Дата приезда</dt><dd>{arrivalDate || '—'}</dd></div>
                   </dl>

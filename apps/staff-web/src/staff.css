@@ -414,8 +414,8 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
 }
 .desk-card {
   position: relative;
-  flex: 0 0 132px;
-  width: 132px;
+  flex: 0 0 148px;
+  width: 148px;
   max-width: 100%;
   min-width: 0;
   min-height: 108px;
@@ -601,11 +601,18 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
   font-weight: 700;
   color: #475569;
 }
-.desk-assign select {
+.desk-assign select,
+.desk-assign input {
   min-height: 30px;
   padding: 4px 28px 4px 8px;
   font-size: 12px;
   font-weight: 600;
+}
+.desk-assign input {
+  padding-right: 8px;
+  border: 1px solid #b8c9df;
+  border-radius: 8px;
+  background: #fff;
 }
 .desk-status {
   font-size: 11px;
@@ -781,6 +788,16 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
   justify-content: space-between;
   gap: 16px;
 }
+.page-header-titles {
+  display: grid;
+  gap: 4px;
+}
+.manager-lane-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e518c;
+}
 .date-picker-inline {
   display: grid;
   gap: 6px;
@@ -844,6 +861,26 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
   background: #eef5fc;
   box-shadow: inset 0 0 0 1px #2563a8;
 }
+.manager-booking-btn.in-progress {
+  border-color: #2563a8;
+  background: #eef5fc;
+  box-shadow: inset 3px 0 0 #2563a8;
+}
+.manager-booking-btn.settled {
+  opacity: 0.52;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+.manager-booking-btn.settled .manager-booking-name,
+.manager-booking-btn.settled .manager-booking-number,
+.manager-booking-btn.settled .manager-booking-time {
+  color: #64748b;
+}
+.manager-booking-btn.settled.selected {
+  opacity: 0.72;
+  background: #e8eef4;
+  border-color: #94a3b8;
+}
 .manager-booking-name {
   font-size: 16px;
   font-weight: 700;
@@ -861,6 +898,27 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
 .manager-booking-time {
   font-size: 13px;
   color: #64748b;
+}
+.kind-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.kind-booking {
+  background: #dbeafe;
+  color: #1e518c;
+}
+.kind-walkin {
+  background: #fef3c7;
+  color: #92400e;
+}
+.client-detail-status {
+  font-weight: 800;
+  color: #1e518c;
 }
 .status-badge {
   display: inline-block;
@@ -884,12 +942,86 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
 .status-badge.status-requeued { background: #fee2e2; color: #b91c1c; }
 .status-field {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin-top: 16px;
-  font-size: 13px;
+  max-width: 100%;
+}
+.status-field-label {
+  font-size: 12px;
   font-weight: 700;
+  color: #64748b;
+}
+.status-current {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: #1e518c;
+}
+.status-hint {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: #64748b;
+  line-height: 1.4;
+}
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.status-actions button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #b8c9df;
+  background: #fff;
+  color: #1e518c;
+  font-weight: 700;
+  cursor: pointer;
+}
+.status-actions button.status-action-primary {
+  background: #1e518c;
+  border-color: #1e518c;
+  color: #fff;
+}
+.status-actions button.status-action-primary:hover:not(:disabled) {
+  background: #2563a8;
+  border-color: #2563a8;
+}
+.status-actions button.status-action-muted {
+  background: #f8fafc;
   color: #475569;
-  max-width: 280px;
+}
+.status-actions button.status-action-danger {
+  background: #fff;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+.status-actions button:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #2563a8;
+}
+.status-actions button.status-action-primary:hover:not(:disabled) {
+  background: #2563a8;
+}
+.status-actions button.status-action-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+.status-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.status-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
 }
 .manager-bookings-empty {
   padding: 32px 16px;
@@ -1026,7 +1158,7 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .form-row, .queue-list > div { grid-template-columns: 1fr; }
   .page-header { flex-direction: column; align-items: flex-start; }
-  .desk-card { width: min(132px, 100%); flex: 0 0 min(132px, 100%); }
+  .desk-card { width: min(148px, 100%); flex: 0 0 min(148px, 100%); }
 }
 @media (max-width: 720px) {
   main { padding: 16px 14px 28px; }

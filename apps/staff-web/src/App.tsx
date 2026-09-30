@@ -3,7 +3,7 @@ import { auditPresentation } from './auditLabels'
 import { ticketStatusLabel } from './labels'
 import './staff.css'
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
+const API = import.meta.env.VITE_API_URL ?? '/api'
 const ERROR_TTL_MS = 30_000
 let csrfToken = ''
 const api = (path: string, init?: RequestInit) => {
@@ -31,6 +31,7 @@ type User = { subject: string; displayName: string; roles: string[]; csrfToken: 
 type Desk = {
   id: string
   label: string
+  displayNumber?: number | null
   country: 'RF' | 'CN'
   active: boolean
   site: { id: string; name: string }
@@ -51,23 +52,46 @@ type BookingRow = {
   number: string
   fullName?: string
   status: string
+  kind?: 'booking' | 'walkIn'
+  kindLabel?: string
+  statusLabel?: string
   scheduledAt?: string
+  slotTime?: string | null
   scheduledLabel?: string
+  issuedLabel?: string
   departureDate?: string
   arrivalDate?: string
   country?: string
   deskLabel?: string
-  allowedStatuses?: string[]
+  statusHint?: string
+  statusOptions?: Array<{ value: string; label: string; current?: boolean }>
 }
 
-const MANAGER_STATUSES = [
-  'BOOKED',
-  'CHECKED_IN',
-  'IN_SERVICE',
-  'COMPLETED',
-  'NO_SHOW',
-  'CANCELLED',
-] as const
+function managerSlotTimeLabel(row: BookingRow) {
+  if (row.slotTime) return row.slotTime
+  if (row.scheduledLabel) return row.scheduledLabel
+  if (row.issuedLabel) return `Без слота · ${row.issuedLabel}`
+  return '—'
+}
+
+const MANAGER_SETTLED_STATUSES = new Set(['NO_SHOW', 'COMPLETED', 'CANCELLED'])
+const MANAGER_IN_PROGRESS_STATUSES = new Set(['CALLED', 'ASSIGNED', 'IN_SERVICE'])
+
+function isManagerSettledRow(status: string) {
+  return MANAGER_SETTLED_STATUSES.has(status)
+}
+
+function isManagerInProgressRow(status: string) {
+  return MANAGER_IN_PROGRESS_STATUSES.has(status)
+}
+
+function statusActionClass(label: string) {
+  if (label === 'Не явился') return 'status-action-danger'
+  if (label === 'Вернуть в очередь' || label === 'Клиент пришёл') {
+    return 'status-action-muted'
+  }
+  return 'status-action-primary'
+}
 
 function todayMoscow(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Moscow' })
@@ -104,13 +128,16 @@ function App() {
   const [creatingDesk, setCreatingDesk] = useState(false)
   const [newDeskLabel, setNewDeskLabel] = useState('')
   const [newDeskCountry, setNewDeskCountry] = useState<'RF' | 'CN'>('RF')
+  const [newDeskNumber, setNewDeskNumber] = useState('')
   const [newDeskSiteId, setNewDeskSiteId] = useState('')
   const [countryPending, setCountryPending] = useState<string | null>(null)
   const [selectedDate, setSelectedDate] = useState(todayMoscow)
   const [bookings, setBookings] = useState<BookingRow[]>([])
+  const [managerCountry, setManagerCountry] = useState<'RF' | 'CN' | null>(null)
   const [bookingsLoading, setBookingsLoading] = useState(false)
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null)
   const [statusPending, setStatusPending] = useState(false)
+  const [statusMessage, setStatusMessage] = useState('')
   const [newManagerUsername, setNewManagerUsername] = useState('')
   const [newManagerFirstName, setNewManagerFirstName] = useState('')
   const [newManagerLastName, setNewManagerLastName] = useState('')
@@ -167,7 +194,16 @@ function App() {
           setBookings([])
           return
         }
-        setBookings(await response.json())
+        const payload = (await response.json()) as
+          | BookingRow[]
+          | { managerCountry?: 'RF' | 'CN' | null; bookings?: BookingRow[] }
+        if (Array.isArray(payload)) {
+          setManagerCountry(null)
+          setBookings(payload)
+          return
+        }
+        setManagerCountry(payload.managerCountry ?? null)
+        setBookings(payload.bookings ?? [])
       })
       .catch(() => {
         setError('Не удалось загрузить записи')
@@ -175,6 +211,37 @@ function App() {
       })
       .finally(() => setBookingsLoading(false))
   }, [user, selectedDate, showSidebar])
+
+  async function reloadBookings() {
+    if (!user || showSidebar) return
+    setBookingsLoading(true)
+    try {
+      const response = await api(`/employee/bookings?date=${selectedDate}`)
+      if (!response.ok) {
+        setError('Не удалось загрузить записи')
+        setBookings([])
+        return
+      }
+      const payload = (await response.json()) as
+        | BookingRow[]
+        | { managerCountry?: 'RF' | 'CN' | null; bookings?: BookingRow[] }
+      const rows = Array.isArray(payload) ? payload : (payload.bookings ?? [])
+      if (Array.isArray(payload)) {
+        setManagerCountry(null)
+      } else {
+        setManagerCountry(payload.managerCountry ?? null)
+      }
+      setBookings(rows)
+      setSelectedBookingId((current) =>
+        current && rows.some((row) => row.id === current) ? current : null,
+      )
+    } catch {
+      setError('Не удалось загрузить записи')
+      setBookings([])
+    } finally {
+      setBookingsLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!showSidebar || view !== 'audit') return
@@ -219,6 +286,14 @@ function App() {
   async function createDesk() {
     if (!newDeskLabel.trim() || !newDeskSiteId) return
     setError('')
+    const parsedNumber = newDeskNumber.trim() === '' ? undefined : Number(newDeskNumber)
+    if (
+      parsedNumber !== undefined &&
+      (!Number.isInteger(parsedNumber) || parsedNumber < 1 || parsedNumber > 99)
+    ) {
+      setError('Номер стола на табло — целое число от 1 до 99')
+      return
+    }
     const response = await api('/admin/desks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -226,6 +301,7 @@ function App() {
         label: newDeskLabel.trim(),
         siteId: newDeskSiteId,
         country: newDeskCountry,
+        displayNumber: parsedNumber,
       }),
     })
     if (!response.ok) {
@@ -233,7 +309,30 @@ function App() {
       return
     }
     setNewDeskLabel('')
+    setNewDeskNumber('')
     setCreatingDesk(false)
+    await reloadDesksData()
+  }
+
+  async function saveDeskNumber(deskId: string, raw: string) {
+    setError('')
+    const displayNumber = raw.trim() === '' ? null : Number(raw)
+    if (
+      displayNumber !== null &&
+      (!Number.isInteger(displayNumber) || displayNumber < 1 || displayNumber > 99)
+    ) {
+      setError('Номер стола на табло — целое число от 1 до 99')
+      return
+    }
+    const response = await api(`/admin/desks/${deskId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ displayNumber }),
+    })
+    if (!response.ok) {
+      setError(await readApiError(response, 'Не удалось сохранить номер стола'))
+      return
+    }
     await reloadDesksData()
   }
 
@@ -364,6 +463,7 @@ function App() {
     const current = bookings.find((row) => row.id === ticketId)
     if (!current || current.status === status) return
     setError('')
+    setStatusMessage('')
     setStatusPending(true)
     const response = await api(`/employee/tickets/${ticketId}/status`, {
       method: 'PATCH',
@@ -372,13 +472,13 @@ function App() {
     })
     setStatusPending(false)
     if (!response.ok) {
-      setError(await readApiError(response, 'Не удалось изменить статус'))
+      const message = await readApiError(response, 'Не удалось изменить статус')
+      setStatusMessage(message)
       return
     }
-    const updated = await response.json() as BookingRow
-    setBookings((rows) =>
-      rows.map((row) => (row.id === ticketId ? { ...row, ...updated } : row)),
-    )
+    await response.json()
+    await reloadBookings()
+    setStatusMessage('')
   }
 
   async function resetManagerPassword(keycloakId: string, username: string) {
@@ -455,7 +555,14 @@ function App() {
           {view === 'work' && !showSidebar && (
             <div className="work-screen manager-schedule">
               <header className="page-header page-header-compact">
-                <h1>Записи на день</h1>
+                <div className="page-header-titles">
+                  <h1>Записи и живая очередь</h1>
+                  {managerCountry && (
+                    <p className="manager-lane-label">
+                      Направление: {countryLabel(managerCountry)}
+                    </p>
+                  )}
+                </div>
                 <label className="date-picker-inline">
                   Дата
                   <input
@@ -476,20 +583,34 @@ function App() {
                       <li key={row.id}>
                         <button
                           type="button"
-                          className={`manager-booking-btn${selectedBookingId === row.id ? ' selected' : ''}`}
-                          onClick={() => setSelectedBookingId(row.id)}
+                          className={`manager-booking-btn${selectedBookingId === row.id ? ' selected' : ''}${isManagerInProgressRow(row.status) ? ' in-progress' : ''}${isManagerSettledRow(row.status) ? ' settled' : ''}`}
+                          onClick={() => {
+                            setSelectedBookingId(row.id)
+                            setStatusMessage('')
+                          }}
                         >
                           <span className="manager-booking-name">{row.fullName ?? 'Без ФИО'}</span>
                           <span className="manager-booking-number">Талон {row.number}</span>
-                          <span className="manager-booking-time">{row.scheduledLabel ?? '—'}</span>
+                          <span className="manager-booking-time">
+                            {managerSlotTimeLabel(row)}
+                          </span>
                           <span className={`status-badge status-${row.status.toLowerCase()}`}>
-                            {ticketStatusLabel[row.status] ?? row.status}
+                            {row.statusLabel ?? ticketStatusLabel[row.status] ?? row.status}
                           </span>
                         </button>
                       </li>
                     ))}
-                    {!bookings.length && !bookingsLoading && (
-                      <li className="manager-bookings-empty">На выбранную дату записей нет</li>
+                    {!bookings.length && !bookingsLoading && !managerCountry && (
+                      <li className="manager-bookings-empty">
+                        Направление не задано. Администратор должен выбрать РФ или Заграничная
+                        в разделе «Менеджеры».
+                      </li>
+                    )}
+                    {!bookings.length && !bookingsLoading && managerCountry && (
+                      <li className="manager-bookings-empty">
+                        На выбранную дату талонов по направлению «{countryLabel(managerCountry)}»
+                        нет
+                      </li>
                     )}
                     {bookingsLoading && (
                       <li className="manager-bookings-empty">Загрузка…</li>
@@ -500,15 +621,24 @@ function App() {
                 <section className="client-panel">
                   {selectedBooking ? (
                     <article className="client-card">
-                      <span className="label">Запись</span>
                       <div className="number">{selectedBooking.number}</div>
                       <h2>{selectedBooking.fullName ?? '—'}</h2>
-                      <p className="client-detail">
-                        Дата приёма: {formatDateLabel(selectedDate)}
+                      <p className="client-detail client-detail-status">
+                        {selectedBooking.statusLabel ??
+                          ticketStatusLabel[selectedBooking.status] ??
+                          selectedBooking.status}
                       </p>
                       <p className="client-detail">
-                        Время: {selectedBooking.scheduledLabel ?? '—'}
+                        Дата: {formatDateLabel(selectedDate)}
                       </p>
+                      <p className="client-detail">
+                        Время: {managerSlotTimeLabel(selectedBooking)}
+                      </p>
+                      {selectedBooking.scheduledLabel &&
+                        selectedBooking.slotTime &&
+                        selectedBooking.scheduledLabel !== selectedBooking.slotTime && (
+                          <p className="client-detail">{selectedBooking.scheduledLabel}</p>
+                        )}
                       <p className="client-detail">
                         Выезд: {selectedBooking.departureDate ?? '—'} · Приезд:{' '}
                         {selectedBooking.arrivalDate ?? '—'}
@@ -517,29 +647,39 @@ function App() {
                         {selectedBooking.country === 'CN' ? 'Заграничная' : 'РФ'}
                         {selectedBooking.deskLabel ? ` · ${selectedBooking.deskLabel}` : ''}
                       </p>
-                      <label className="status-field">
-                        Статус
-                        <select
-                          value={selectedBooking.status}
-                          disabled={statusPending}
-                          onChange={(event) =>
-                            void setBookingStatus(selectedBooking.id, event.target.value)
-                          }
-                        >
-                          {(selectedBooking.allowedStatuses ?? MANAGER_STATUSES).map((status) => (
-                            <option key={status} value={status}>
-                              {ticketStatusLabel[status] ?? status}
-                            </option>
-                          ))}
-                          {!MANAGER_STATUSES.includes(
-                            selectedBooking.status as (typeof MANAGER_STATUSES)[number],
-                          ) && (
-                            <option value={selectedBooking.status}>
-                              {ticketStatusLabel[selectedBooking.status] ?? selectedBooking.status}
-                            </option>
-                          )}
-                        </select>
-                      </label>
+                      <div className="status-field">
+                        <span className="status-field-label">Статус</span>
+                        <p className="status-current">
+                          {selectedBooking.statusLabel ??
+                            ticketStatusLabel[selectedBooking.status] ??
+                            selectedBooking.status}
+                        </p>
+                        {selectedBooking.statusHint && (
+                          <p className="status-hint">{selectedBooking.statusHint}</p>
+                        )}
+                        <div className="status-actions">
+                          {(selectedBooking.statusOptions ?? [])
+                            .filter((option) => !option.current)
+                            .map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={statusActionClass(option.label)}
+                                disabled={statusPending}
+                                onClick={() =>
+                                  void setBookingStatus(selectedBooking.id, option.value)
+                                }
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                        </div>
+                        {statusMessage && (
+                          <p className="status-error" role="alert">
+                            {statusMessage}
+                          </p>
+                        )}
+                      </div>
                     </article>
                   ) : (
                     <article className="client-card client-card-muted">
@@ -617,6 +757,18 @@ function App() {
                       {countryLabel(desk.country)}
                     </span>
                     <label className="desk-assign">
+                      № на табло
+                      <input
+                        type="number"
+                        min={1}
+                        max={99}
+                        key={`${desk.id}-${desk.displayNumber ?? ''}`}
+                        defaultValue={desk.displayNumber ?? ''}
+                        placeholder="1–99"
+                        onBlur={(event) => void saveDeskNumber(desk.id, event.target.value)}
+                      />
+                    </label>
+                    <label className="desk-assign">
                       Менеджер
                       <select
                         value={desk.employees[0]?.id ?? ''}
@@ -665,6 +817,7 @@ function App() {
                           if (event.key === 'Escape') {
                             setCreatingDesk(false)
                             setNewDeskLabel('')
+                            setNewDeskNumber('')
                           }
                         }}
                       />
@@ -678,6 +831,17 @@ function App() {
                         <option value="RF">РФ</option>
                         <option value="CN">Заграничная</option>
                       </select>
+                    </label>
+                    <label>
+                      № на табло
+                      <input
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={newDeskNumber}
+                        placeholder="1–99"
+                        onChange={(event) => setNewDeskNumber(event.target.value)}
+                      />
                     </label>
                     <div className="desk-create-actions">
                       <button

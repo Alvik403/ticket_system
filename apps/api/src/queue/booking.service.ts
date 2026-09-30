@@ -42,25 +42,15 @@ export class BookingService {
     return SLOT_DURATION[country];
   }
 
-  getAvailableDates(count = 14): string[] {
+  /** Календарь записи: сегодня и следующие календарные дни (по Москве) */
+  getAvailableDates(count = 3): string[] {
     const dates: string[] = [];
-
-    const today = this.formatDate(new Date());
-
-    const cursor = this.slotToDate(today, '12:00');
-
-    cursor.setDate(cursor.getDate() + 1);
-
-    while (dates.length < count) {
-      const day = cursor.getDay();
-
-      if (day !== 0 && day !== 6) {
-        dates.push(this.formatDate(cursor));
-      }
-
-      cursor.setDate(cursor.getDate() + 1);
+    const base = this.slotToDate(this.formatDate(new Date()), '12:00');
+    for (let offset = 0; offset < count; offset += 1) {
+      const cursor = new Date(base);
+      cursor.setDate(cursor.getDate() + offset);
+      dates.push(this.formatDate(cursor));
     }
-
     return dates;
   }
 

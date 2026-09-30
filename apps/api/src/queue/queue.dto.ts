@@ -3,15 +3,23 @@ import {
   IsBoolean,
   IsDateString,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import type { ClientCountry, EmployeeStatus } from '../domain/entities';
+import type {
+  ClientCountry,
+  EmployeeStatus,
+  TicketStatus,
+} from '../domain/entities';
+import { TICKET_STATUSES } from '../domain/entities';
 
 export class HoldSlotDto {
   @IsUUID() siteId!: string;
@@ -39,6 +47,11 @@ export class CreateTicketDto {
   @IsDateString() arrivalDate!: string;
   @IsDateString() scheduledAt!: string;
   @IsString() @MinLength(8) @MaxLength(64) holdId!: string;
+  @IsString()
+  @MinLength(11)
+  @MaxLength(11)
+  @Matches(/^\d{11}$/, { message: 'Некорректный номер телефона' })
+  phone!: string;
   @IsBoolean()
   @Equals(true, {
     message: 'Необходимо согласие на обработку персональных данных',
@@ -82,6 +95,38 @@ export class AssignmentActionDto {
   reason?: string;
 }
 
+export class CreateWalkInTicketDto {
+  @IsUUID() siteId!: string;
+  @IsUUID() serviceTypeId!: string;
+  @IsIn(['RF', 'CN']) country!: ClientCountry;
+  @IsString() @MinLength(3) @MaxLength(200) fullName!: string;
+  @IsDateString() scheduledAt!: string;
+  @IsString()
+  @MinLength(10)
+  @MaxLength(20)
+  @Matches(/^[\d+()\-\s]+$/, { message: 'Некорректный номер телефона' })
+  phone!: string;
+  @IsOptional()
+  @IsDateString()
+  departureDate?: string;
+  @IsOptional()
+  @IsDateString()
+  arrivalDate?: string;
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Необходимо согласие на обработку персональных данных',
+  })
+  personalDataConsent!: boolean;
+
+  @IsOptional()
+  @ValidateIf(
+    (value: CreateWalkInTicketDto) =>
+      value.website !== undefined && value.website !== '',
+  )
+  @MaxLength(0, { message: 'invalid' })
+  website?: string;
+}
+
 export class CreateDeskDto {
   @IsString()
   @MaxLength(120)
@@ -92,6 +137,12 @@ export class CreateDeskDto {
 
   @IsIn(['RF', 'CN'])
   country!: ClientCountry;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  displayNumber?: number;
 }
 
 export class UpdateDeskDto {
@@ -107,6 +158,12 @@ export class UpdateDeskDto {
   @IsOptional()
   @IsIn(['RF', 'CN'])
   country?: ClientCountry;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  displayNumber?: number | null;
 }
 
 export class AssignEmployeeDeskDto {
@@ -149,19 +206,6 @@ export class EmployeeSelfDeskDto {
 }
 
 export class SetTicketStatusDto {
-  @IsIn([
-    'BOOKED',
-    'CHECKED_IN',
-    'IN_SERVICE',
-    'COMPLETED',
-    'NO_SHOW',
-    'CANCELLED',
-  ])
-  status!:
-    | 'BOOKED'
-    | 'CHECKED_IN'
-    | 'IN_SERVICE'
-    | 'COMPLETED'
-    | 'NO_SHOW'
-    | 'CANCELLED';
+  @IsIn(TICKET_STATUSES)
+  status!: TicketStatus;
 }

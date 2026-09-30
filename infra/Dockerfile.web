@@ -26,7 +26,8 @@ COPY infra/nginx-web-entrypoint.sh /nginx-web-entrypoint.sh
 COPY --from=build /app/apps/client-web/dist /usr/share/nginx/html/client
 COPY --from=build /app/apps/staff-web/dist /usr/share/nginx/html/staff
 
-RUN mkdir -p /var/www/certbot \
+RUN sed -i 's/\r$//' /nginx-web-entrypoint.sh \
+  && mkdir -p /var/www/certbot \
   && chmod +x /nginx-web-entrypoint.sh
 
 EXPOSE 80 443 8080 18080

@@ -22,14 +22,14 @@ SELECT gen_random_uuid(), 'Предоставление и сдача маршр
   FROM site
  WHERE site.code = 'MAIN';
 
-INSERT INTO desk (id, label, country, active, "siteId")
-SELECT gen_random_uuid(), label, country, true, site.id
+INSERT INTO desk (id, label, country, "displayNumber", active, "siteId")
+SELECT gen_random_uuid(), label, country, display_number, true, site.id
   FROM site,
        (VALUES
-          ('Стол РФ-1', 'RF'),
-          ('Стол РФ-2', 'RF'),
-          ('Стол Заграничная', 'CN')
-       ) AS desks(label, country)
+          ('Стол РФ-1', 'RF', 1),
+          ('Стол РФ-2', 'RF', 2),
+          ('Стол Заграничная', 'CN', 3)
+       ) AS desks(label, country, display_number)
  WHERE site.code = 'MAIN';
 
 COMMIT;

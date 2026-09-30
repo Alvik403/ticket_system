@@ -1,13 +1,13 @@
 export const ticketStatusLabel: Record<string, string> = {
-  BOOKED: 'Ожидает явки',
-  WAITING: 'В очереди',
-  CHECKED_IN: 'Явился',
-  REQUEUED: 'Повторно в очереди',
-  ASSIGNED: 'Назначен',
-  CALLED: 'Вызван',
-  IN_SERVICE: 'Обслуживается',
-  COMPLETED: 'Завершён',
-  CANCELLED: 'Отменён',
+  BOOKED: 'Ожидает',
+  WAITING: 'Ожидает',
+  CHECKED_IN: 'В очереди',
+  REQUEUED: 'В очереди',
+  ASSIGNED: 'Вызов',
+  CALLED: 'Вызов',
+  IN_SERVICE: 'Обработка',
+  COMPLETED: 'Готово',
+  CANCELLED: 'Отменено',
   NO_SHOW: 'Не явился',
 }
 

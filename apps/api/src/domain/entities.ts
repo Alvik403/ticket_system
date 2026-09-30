@@ -22,6 +22,20 @@ export type TicketStatus =
   | 'NO_SHOW'
   | 'CANCELLED';
 
+/** Все значения статуса (в т.ч. для PATCH менеджером) */
+export const TICKET_STATUSES: TicketStatus[] = [
+  'BOOKED',
+  'WAITING',
+  'CHECKED_IN',
+  'ASSIGNED',
+  'CALLED',
+  'IN_SERVICE',
+  'COMPLETED',
+  'REQUEUED',
+  'NO_SHOW',
+  'CANCELLED',
+];
+
 export const SLOT_HOLDING_STATUSES: TicketStatus[] = [
   'BOOKED',
   'WAITING',
@@ -60,6 +74,7 @@ export class ServiceType {
 export class Desk {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column() label!: string;
+  @Column({ type: 'int', nullable: true }) displayNumber?: number | null;
   @Column({ type: 'varchar', default: 'RF' }) country!: ClientCountry;
   @Column({ default: true }) active!: boolean;
   @ManyToOne(() => Site, { nullable: false }) site!: Site;
@@ -101,6 +116,7 @@ export class Ticket {
   @ManyToOne(() => ServiceType, { nullable: false }) serviceType!: ServiceType;
   @Column({ type: 'varchar', nullable: true }) country?: ClientCountry;
   @Column({ nullable: true }) fullName?: string;
+  @Column({ type: 'varchar', nullable: true }) phone?: string;
   @Column({ type: 'text', nullable: true }) travelHistory?: string;
   @Column({ type: 'date', nullable: true }) departureDate?: string;
   @Column({ type: 'date', nullable: true }) arrivalDate?: string;

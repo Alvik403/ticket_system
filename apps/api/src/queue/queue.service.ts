@@ -13,8 +13,10 @@ import {
   DataSource,
   EntityManager,
   In,
+  IsNull,
   Like,
   QueryFailedError,
+  Not,
   Raw,
 } from 'typeorm';
 import {
@@ -43,7 +45,32 @@ import {
   type AssignmentAction,
 } from './queue.rules';
 import { BookingService } from './booking.service';
+import {
+  BOARD_COLUMNS,
+  buildPublicBoardColumns,
+  deskNumberFrom,
+  formatBoardSlotTime,
+} from './queue.display';
+import {
+  clientProgressLabels,
+  clientProgressStep,
+  clientShowsDesk,
+  clientStatusLabel,
+  managerStatusHint,
+  managerStatusPickerOptions,
+  staffStatusLabel,
+  ticketKind,
+  ticketKindLabel,
+  validateManagerStatusChange,
+} from './ticket-presentation';
 import { RateLimitService } from './rate-limit.service';
+import {
+  applyQueueDispatchOrder,
+  compareManagerTickets,
+  employeeWorkCountry,
+  MANAGER_IN_PROGRESS_STATUSES,
+  managerTicketVisibleInList,
+} from './queue-dispatch';
 
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {
@@ -75,11 +102,32 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         site,
       });
       await this.dataSource.getRepository(Desk).save([
-        { label: 'Стол РФ-1', country: 'RF' as const, site },
-        { label: 'Стол РФ-2', country: 'RF' as const, site },
-        { label: 'Стол Заграничная', country: 'CN' as const, site },
+        {
+          label: 'Стол РФ-1',
+          country: 'RF' as const,
+          displayNumber: 1,
+          site,
+        },
+        {
+          label: 'Стол РФ-2',
+          country: 'RF' as const,
+          displayNumber: 2,
+          site,
+        },
+        {
+          label: 'Стол Заграничная',
+          country: 'CN' as const,
+          displayNumber: 3,
+          site,
+        },
       ]);
     }
+    await this.dataSource.query(
+      `UPDATE "desk"
+          SET "displayNumber" = CAST(substring(label from '([0-9]+)$') AS integer)
+        WHERE "displayNumber" IS NULL
+          AND label ~ '[0-9]+$'`,
+    );
     this.dispatchTimer = setInterval(() => {
       void this.dispatchAvailable().catch((error: unknown) => {
         this.logger.error('Queue dispatch failed', error);
@@ -194,6 +242,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     serviceTypeId: string;
     country: ClientCountry;
     fullName: string;
+    phone: string;
     departureDate: string;
     arrivalDate: string;
     scheduledAt: string;
@@ -289,6 +338,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
             serviceType,
             country: input.country,
             fullName: input.fullName.trim(),
+            phone: input.phone.trim(),
             departureDate,
             arrivalDate,
             personalDataConsentAt: new Date(),
@@ -336,6 +386,188 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         throw error;
       }
     });
+  }
+
+  async createWalkInTicket(input: {
+    siteId: string;
+    serviceTypeId: string;
+    country: ClientCountry;
+    fullName: string;
+    scheduledAt: string;
+    phone: string;
+    departureDate?: string;
+    arrivalDate?: string;
+  }) {
+    const rawToken = randomBytes(32).toString('base64url');
+    const tokenHash = this.hashToken(rawToken);
+    const lookupCode = this.generateLookupCode();
+    const lookupCodeHash = this.hashToken(lookupCode);
+    const scheduledAt = new Date(input.scheduledAt);
+    if (Number.isNaN(scheduledAt.getTime())) {
+      throw new BadRequestException('Некорректное время слота');
+    }
+    const durationMinutes = this.booking.durationFor(input.country);
+    const phone = input.phone.replace(/\s/g, '').trim();
+    const departureDate = input.departureDate?.trim();
+    const arrivalDate = input.arrivalDate?.trim();
+    if (departureDate && arrivalDate && arrivalDate < departureDate) {
+      throw new BadRequestException(
+        'Дата приезда не может быть раньше даты выезда',
+      );
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const site = await manager.findOneBy(Site, {
+        id: input.siteId,
+        active: true,
+      });
+      const serviceType = await manager.findOne(ServiceType, {
+        where: {
+          id: input.serviceTypeId,
+          active: true,
+          site: { id: input.siteId },
+        },
+        relations: { site: true },
+      });
+      if (!site || !serviceType) {
+        throw new NotFoundException('Услуга не найдена');
+      }
+
+      const today = new Date().toLocaleDateString('en-CA', {
+        timeZone: site.timezone || 'Europe/Moscow',
+      });
+      const slotDate = scheduledAt.toLocaleDateString('en-CA', {
+        timeZone: site.timezone || 'Europe/Moscow',
+      });
+      if (slotDate !== today) {
+        throw new BadRequestException('Можно выбрать только слот на сегодня');
+      }
+      if (scheduledAt.getTime() <= Date.now()) {
+        throw new BadRequestException('Этот слот уже прошёл');
+      }
+
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        input.siteId,
+      ]);
+
+      await this.booking.assertSlotAvailable(
+        input.siteId,
+        scheduledAt,
+        durationMinutes,
+        input.country,
+      );
+      const reservedDesk = await this.booking.reserveDesk(
+        input.siteId,
+        input.country,
+        scheduledAt,
+        durationMinutes,
+      );
+
+      const count = await manager
+        .createQueryBuilder(Ticket, 'ticket')
+        .where('ticket.siteId = :siteId', { siteId: input.siteId })
+        .andWhere(
+          "ticket.createdAt >= (date_trunc('day', now() AT TIME ZONE :timezone) AT TIME ZONE :timezone)",
+          { timezone: site.timezone },
+        )
+        .getCount();
+
+      const ticket = await manager.save(
+        manager.create(Ticket, {
+          number: `${site.code}-${String(count + 1).padStart(3, '0')}`,
+          accessTokenHash: tokenHash,
+          lookupCodeHash,
+          status: 'BOOKED',
+          site,
+          serviceType,
+          country: input.country,
+          fullName: input.fullName.trim(),
+          phone,
+          departureDate: departureDate || undefined,
+          arrivalDate: arrivalDate || undefined,
+          personalDataConsentAt: new Date(),
+          scheduledAt,
+          durationMinutes,
+          reservedDesk,
+        }),
+      );
+      await this.event(
+        manager,
+        ticket.id,
+        'CREATED',
+        {
+          country: input.country,
+          walkIn: true,
+          scheduledAt: scheduledAt.toISOString(),
+        },
+        undefined,
+      );
+      return {
+        number: ticket.number,
+        scheduledLabel: this.booking.formatScheduledLabel(scheduledAt),
+      };
+    });
+  }
+
+  async getPublicBoard(
+    siteCode?: string,
+    country?: ClientCountry,
+  ) {
+    const siteRepository = this.dataSource.getRepository(Site);
+    const site = siteCode
+      ? await siteRepository.findOne({
+          where: { code: siteCode, active: true },
+        })
+      : await siteRepository.findOne({
+          where: { active: true },
+          order: { code: 'ASC' },
+        });
+    if (!site) throw new NotFoundException('Площадка не найдена');
+
+    const statuses = BOARD_COLUMNS.flatMap((column) => column.statuses);
+    const tickets = await this.dataSource.getRepository(Ticket).find({
+      where: country
+        ? { site: { id: site.id }, status: In(statuses), country }
+        : { site: { id: site.id }, status: In(statuses) },
+      relations: { reservedDesk: true, assignments: { desk: true } },
+      order: { scheduledAt: 'ASC', createdAt: 'ASC' },
+    });
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: site.timezone || 'Europe/Moscow',
+    });
+    const bounds = this.booking.dayBounds(today, site.timezone);
+    const laneLabel =
+      country === 'CN' ? 'Заграничная' : country === 'RF' ? 'РФ' : undefined;
+    const ticketsToday = tickets.filter((ticket) => {
+      const anchor = ticket.scheduledAt ?? ticket.createdAt;
+      return (
+        anchor.getTime() >= bounds.start.getTime() &&
+        anchor.getTime() < bounds.end.getTime()
+      );
+    });
+    return {
+      site: { id: site.id, code: site.code, name: site.name },
+      country: country ?? null,
+      countryLabel: laneLabel ?? null,
+      columns: buildPublicBoardColumns(
+        ticketsToday.map((ticket) => {
+          const active = ticket.assignments?.find(
+            (assignment) => assignment.active,
+          );
+          return {
+            number: ticket.number,
+            status: ticket.status,
+            fullName: ticket.fullName,
+            country: ticket.country,
+            scheduledAt: ticket.scheduledAt,
+            desk: active?.desk ?? ticket.reservedDesk,
+            siteTimeZone: site.timezone,
+          };
+        }),
+        bounds,
+      ),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async getPublicTicketByHash(tokenHash: string) {
@@ -625,11 +857,12 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     if (!employee.site) {
       throw new NotFoundException('Площадка не настроена');
     }
+    const workCountry = employeeWorkCountry(employee);
     const desks = await this.dataSource.getRepository(Desk).find({
       where: {
         site: { id: employee.site.id },
         active: true,
-        ...(employee.country ? { country: employee.country } : {}),
+        ...(workCountry ? { country: workCountry } : {}),
       },
       order: { label: 'ASC' },
     });
@@ -723,14 +956,18 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       where: { employee: { id: employee.id }, active: true },
       relations: { ticket: { serviceType: true }, desk: true },
     });
-    const queue = await this.getQueueSummary(employee.site?.id);
+    const workCountry = employeeWorkCountry(employee);
+    const queue = await this.getQueueSummary(
+      employee.site?.id,
+      workCountry ?? undefined,
+    );
     const queueTickets = employee.site?.id
-      ? await this.listLiveQueueTickets(employee.site.id)
+      ? await this.listLiveQueueTickets(employee.site.id, workCountry ?? undefined)
       : [];
     const dayBookings = employee.site?.id
-      ? await this.listDayBookings(employee.site.id)
+      ? await this.listDayBookings(employee.site.id, workCountry ?? undefined)
       : [];
-    const country = employee.country ?? employee.desk?.country;
+    const country = workCountry;
     const queueEmptyReason = !employee.desk
       ? 'NO_DESK'
       : !country
@@ -752,45 +989,97 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new BadRequestException('Некорректная дата');
     }
-    const employee = await this.ensureEmployee(user);
-    if (!employee.site?.id) return [];
-    const { start, end } = this.booking.dayBounds(date, employee.site.timezone);
-    const tickets = await this.dataSource.getRepository(Ticket).find({
-      where: {
-        site: { id: employee.site.id },
-        scheduledAt: Raw(
-          (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
-          { dayStart: start, dayEnd: end },
-        ),
-      },
-      relations: { serviceType: true, reservedDesk: true },
-      order: { scheduledAt: 'ASC', createdAt: 'ASC' },
+    const employee = await this.dataSource.getRepository(Employee).findOne({
+      where: { oidcSubject: user.subject },
+      relations: { site: true, desk: true },
     });
-    return tickets.map((ticket) => this.managerBookingView(ticket));
+    if (!employee?.site?.id) {
+      return { managerCountry: null, bookings: [] };
+    }
+    const managerCountry = employeeWorkCountry(employee);
+    if (!managerCountry) {
+      return { managerCountry: null, bookings: [] };
+    }
+    const { start, end } = this.booking.dayBounds(date, employee.site.timezone);
+    const ticketRepository = this.dataSource.getRepository(Ticket);
+    const countryFilter = { country: managerCountry };
+    const [withSlot, legacyNoSlot] = await Promise.all([
+      ticketRepository.find({
+        where: {
+          site: { id: employee.site.id },
+          ...countryFilter,
+          scheduledAt: Raw(
+            (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+            { dayStart: start, dayEnd: end },
+          ),
+        },
+        relations: {
+          serviceType: true,
+          reservedDesk: true,
+          site: true,
+          assignments: { employee: true },
+        },
+      }),
+      ticketRepository.find({
+        where: {
+          site: { id: employee.site.id },
+          ...countryFilter,
+          scheduledAt: IsNull(),
+          createdAt: Raw(
+            (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+            { dayStart: start, dayEnd: end },
+          ),
+        },
+        relations: {
+          serviceType: true,
+          reservedDesk: true,
+          site: true,
+          assignments: { employee: true },
+        },
+      }),
+    ]);
+    const merged = [...withSlot, ...legacyNoSlot]
+      .filter((ticket) => ticket.country === managerCountry)
+      .filter((ticket) => managerTicketVisibleInList(ticket, employee.id))
+      .sort(compareManagerTickets);
+    return {
+      managerCountry,
+      bookings: merged.map((ticket) => this.managerBookingView(ticket)),
+    };
   }
 
   private managerBookingView(ticket: Ticket) {
+    const kind = ticketKind(ticket.scheduledAt);
+    const timeZone = ticket.site?.timezone ?? 'Europe/Moscow';
+    const slotTime = ticket.scheduledAt
+      ? formatBoardSlotTime(ticket.scheduledAt, timeZone)
+      : null;
     return {
       id: ticket.id,
       number: ticket.number,
       fullName: ticket.fullName,
       status: ticket.status,
+      kind,
+      kindLabel: ticketKindLabel(kind),
+      statusLabel: staffStatusLabel(ticket.status, kind),
       country: ticket.country,
       scheduledAt: ticket.scheduledAt?.toISOString(),
+      slotTime,
       scheduledLabel: ticket.scheduledAt
         ? this.booking.formatScheduledLabel(ticket.scheduledAt)
+        : undefined,
+      issuedLabel: !ticket.scheduledAt
+        ? ticket.createdAt.toLocaleTimeString('ru-RU', {
+            timeZone,
+            hour: '2-digit',
+            minute: '2-digit',
+          })
         : undefined,
       departureDate: ticket.departureDate,
       arrivalDate: ticket.arrivalDate,
       deskLabel: ticket.reservedDesk?.label,
-      allowedStatuses: [
-        'BOOKED',
-        'CHECKED_IN',
-        'IN_SERVICE',
-        'COMPLETED',
-        'NO_SHOW',
-        'CANCELLED',
-      ] as TicketStatus[],
+      statusHint: managerStatusHint(kind, ticket.status),
+      statusOptions: managerStatusPickerOptions(kind, ticket.status),
     };
   }
 
@@ -799,15 +1088,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     ticketId: string,
     status: TicketStatus,
   ) {
-    const allowed: TicketStatus[] = [
-      'BOOKED',
-      'CHECKED_IN',
-      'IN_SERVICE',
-      'COMPLETED',
-      'NO_SHOW',
-      'CANCELLED',
-    ];
-    if (!allowed.includes(status)) {
+    if (!status) {
       throw new BadRequestException('Этот статус недоступен');
     }
     return this.dataSource.transaction(async (manager) => {
@@ -825,30 +1106,101 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       if (employee.site?.id && ticket.site?.id !== employee.site.id) {
         throw new ForbiddenException('Нет доступа к этой записи');
       }
+      const kind = ticketKind(ticket.scheduledAt);
       const previous = ticket.status;
+      const blockReason = validateManagerStatusChange(kind, previous, status);
+      if (blockReason) {
+        throw new BadRequestException(blockReason);
+      }
+      const inProgress = (MANAGER_IN_PROGRESS_STATUSES as readonly string[]).includes(
+        status,
+      );
+      const wasInProgress = (
+        MANAGER_IN_PROGRESS_STATUSES as readonly string[]
+      ).includes(previous);
+      let assignment = await manager.findOne(Assignment, {
+        where: { ticket: { id: ticket.id }, active: true },
+        relations: { employee: true },
+      });
+      if (
+        assignment?.employee?.id &&
+        assignment.employee.id !== employee.id &&
+        (wasInProgress || inProgress)
+      ) {
+        throw new ForbiddenException(
+          'Клиент уже вызван или обслуживается другим менеджером',
+        );
+      }
       if (previous === status) {
         return this.managerBookingView(ticket);
+      }
+      if (inProgress) {
+        const otherActive = await manager.findOne(Assignment, {
+          where: {
+            employee: { id: employee.id },
+            active: true,
+            ticket: { id: Not(ticket.id) },
+          },
+        });
+        if (otherActive) {
+          throw new BadRequestException(
+            'Сначала завершите обслуживание текущего клиента',
+          );
+        }
       }
       ticket.status = status;
       if (status === 'CHECKED_IN' && !ticket.checkedInAt) {
         ticket.checkedInAt = new Date();
         ticket.priority = 1;
       }
+      if (status === 'REQUEUED') {
+        ticket.priority = 0;
+      }
       if (status === 'BOOKED') {
         ticket.priority = 0;
       }
       await manager.save(ticket);
 
-      if (['COMPLETED', 'CANCELLED', 'NO_SHOW', 'BOOKED'].includes(status)) {
-        const assignment = await manager.findOne(Assignment, {
+      let employeeToDispatch: Employee | null = null;
+      if (inProgress) {
+        const now = new Date();
+        if (!assignment) {
+          assignment = manager.create(Assignment, {
+            ticket,
+            employee,
+            desk: employee.desk ?? undefined,
+            active: true,
+            calledAt: now,
+          });
+        } else {
+          if (!assignment.calledAt) assignment.calledAt = now;
+        }
+        if (status === 'IN_SERVICE') {
+          assignment.startedAt = now;
+          employee.status = 'BUSY';
+        } else {
+          employee.status = 'RESERVED';
+        }
+        await manager.save([assignment, employee]);
+      }
+
+      if (
+        ['COMPLETED', 'CANCELLED', 'NO_SHOW', 'BOOKED', 'REQUEUED'].includes(
+          status,
+        ) ||
+        (status === 'CHECKED_IN' &&
+          ['CALLED', 'ASSIGNED'].includes(previous))
+      ) {
+        assignment = await manager.findOne(Assignment, {
           where: { ticket: { id: ticket.id }, active: true },
-          relations: { employee: true },
+          relations: { employee: { site: true, desk: true } },
         });
         if (assignment) {
           assignment.active = false;
           assignment.completedAt = new Date();
           if (assignment.employee) {
             assignment.employee.status = 'AVAILABLE';
+            employeeToDispatch = assignment.employee;
             await manager.save([assignment, assignment.employee]);
           } else {
             await manager.save(assignment);
@@ -861,7 +1213,16 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         from: previous,
         to: status,
       });
-      return this.managerBookingView(ticket);
+
+      if (employeeToDispatch?.desk && employeeToDispatch.status === 'AVAILABLE') {
+        await this.assignNext(manager, employeeToDispatch);
+      }
+
+      const refreshed = await manager.findOne(Ticket, {
+        where: { id: ticket.id },
+        relations: { serviceType: true, reservedDesk: true, site: true },
+      });
+      return this.managerBookingView(refreshed ?? ticket);
     });
   }
 
@@ -885,40 +1246,54 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async listLiveQueueTickets(siteId: string) {
+  private async listLiveQueueTickets(siteId: string, country?: ClientCountry) {
     const tickets = await this.dataSource.getRepository(Ticket).find({
-      where: LIVE_QUEUE_STATUSES.map((status) => ({
-        site: { id: siteId },
-        status,
-      })),
+      where: LIVE_QUEUE_STATUSES.flatMap((status) =>
+        country
+          ? [{ site: { id: siteId }, status, country }]
+          : [{ site: { id: siteId }, status }],
+      ),
       relations: { serviceType: true, reservedDesk: true },
       order: { priority: 'DESC', scheduledAt: 'ASC', createdAt: 'ASC' },
     });
-    return tickets.map((ticket) => this.staffTicketView(ticket));
+    return tickets
+      .filter((ticket) => !country || ticket.country === country)
+      .sort(compareManagerTickets)
+      .map((ticket) => this.staffTicketView(ticket));
   }
 
-  private async listDayBookings(siteId: string) {
+  private async listDayBookings(siteId: string, country?: ClientCountry) {
     const start = new Date();
     const date = start.toLocaleDateString('en-CA', {
       timeZone: 'Europe/Moscow',
     });
     const { start: dayStart, end: dayEnd } = this.booking.dayBounds(date);
     const tickets = await this.dataSource.getRepository(Ticket).find({
-      where: {
-        site: { id: siteId },
-        status: In(['BOOKED', 'NO_SHOW']),
-        scheduledAt: Raw(
-          (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
-          { dayStart, dayEnd },
-        ),
-      },
+      where: country
+        ? {
+            site: { id: siteId },
+            country,
+            status: In(['BOOKED', 'NO_SHOW']),
+            scheduledAt: Raw(
+              (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+              { dayStart, dayEnd },
+            ),
+          }
+        : {
+            site: { id: siteId },
+            status: In(['BOOKED', 'NO_SHOW']),
+            scheduledAt: Raw(
+              (column) => `${column} >= :dayStart AND ${column} < :dayEnd`,
+              { dayStart, dayEnd },
+            ),
+          },
       relations: { serviceType: true, reservedDesk: true },
       order: { scheduledAt: 'ASC' },
     });
     return tickets.map((ticket) => this.staffTicketView(ticket));
   }
 
-  private async getQueueSummary(siteId?: string) {
+  private async getQueueSummary(siteId?: string, country?: ClientCountry) {
     if (!siteId) {
       return { waitingCount: 0, availableAgents: 0 };
     }
@@ -926,16 +1301,30 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     const employeeRepository = this.dataSource.getRepository(Employee);
     const [waitingCount, availableAgents] = await Promise.all([
       ticketRepository.count({
-        where: LIVE_QUEUE_STATUSES.map((status) => ({
-          site: { id: siteId },
-          status,
-        })),
+        where: LIVE_QUEUE_STATUSES.flatMap((status) =>
+          country
+            ? [{ site: { id: siteId }, status, country }]
+            : [{ site: { id: siteId }, status }],
+        ),
       }),
       employeeRepository.count({
-        where: { site: { id: siteId }, status: 'AVAILABLE' },
+        where: country
+          ? { site: { id: siteId }, status: 'AVAILABLE', country }
+          : { site: { id: siteId }, status: 'AVAILABLE' },
       }),
     ]);
     return { waitingCount, availableAgents };
+  }
+
+  /** Активное обслуживание на столе (не более одного клиента) */
+  private async activeDeskAssignment(
+    manager: EntityManager,
+    deskId: string,
+  ): Promise<Assignment | null> {
+    return manager.findOne(Assignment, {
+      where: { desk: { id: deskId }, active: true },
+      relations: { employee: true, ticket: true },
+    });
   }
 
   async assignmentAction(
@@ -966,7 +1355,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         : null;
       if (!assignment) throw new NotFoundException('Назначение не найдено');
       const ticket = assignment.ticket;
-      const next = nextTicketStatus(ticket.status, action);
+      const next = nextTicketStatus(ticket.status, action, {
+        hasScheduledSlot: Boolean(ticket.scheduledAt),
+      });
       if (!next) {
         throw new BadRequestException(
           `Действие «${action}» недоступно для статуса «${ticket.status}»`,
@@ -1246,6 +1637,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     return desks.map((desk) => ({
       id: desk.id,
       label: desk.label,
+      displayNumber: deskNumberFrom(desk),
       country: desk.country,
       active: desk.active,
       site: { id: desk.site.id, name: desk.site.name },
@@ -1258,6 +1650,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     label: string,
     siteId: string,
     country: ClientCountry,
+    displayNumber?: number,
   ) {
     const site = await this.dataSource.getRepository(Site).findOneBy({
       id: siteId,
@@ -1269,17 +1662,19 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         label: label.trim(),
         site,
         country,
+        displayNumber: displayNumber ?? null,
       }),
     );
     await this.dataSource.getRepository(AuditEvent).save({
       actorSubject,
       action: 'DESK_CREATED',
       targetId: desk.id,
-      details: { label: desk.label, siteId, country },
+      details: { label: desk.label, siteId, country, displayNumber },
     });
     return {
       id: desk.id,
       label: desk.label,
+      displayNumber: deskNumberFrom(desk),
       country: desk.country,
       active: desk.active,
       site: { id: site.id, name: site.name },
@@ -1290,7 +1685,12 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   async updateDesk(
     actorSubject: string,
     deskId: string,
-    patch: { label?: string; active?: boolean; country?: ClientCountry },
+    patch: {
+      label?: string;
+      active?: boolean;
+      country?: ClientCountry;
+      displayNumber?: number | null;
+    },
   ) {
     const desk = await this.dataSource.getRepository(Desk).findOne({
       where: { id: deskId },
@@ -1300,6 +1700,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     if (patch.label !== undefined) desk.label = patch.label.trim();
     if (patch.active !== undefined) desk.active = patch.active;
     if (patch.country !== undefined) desk.country = patch.country;
+    if (patch.displayNumber !== undefined) {
+      desk.displayNumber = patch.displayNumber;
+    }
     await this.dataSource.getRepository(Desk).save(desk);
     await this.dataSource.getRepository(AuditEvent).save({
       actorSubject,
@@ -1656,6 +2059,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       take: 100,
     });
     for (const employee of employees) {
+      if (!employeeWorkCountry(employee) || !employee.desk) continue;
       await this.dataSource.transaction(async (manager) => {
         const row = await manager.findOne(Employee, {
           where: { id: employee.id, status: 'AVAILABLE' },
@@ -1877,15 +2281,19 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     });
     if (existing) return existing;
 
-    const employeeCountry = employee.country ?? employee.desk?.country;
+    const employeeCountry = employeeWorkCountry(employee);
     if (!employeeCountry || !employee.desk) return null;
 
-    const baseQuery = () =>
-      manager
+    const deskBusy = await this.activeDeskAssignment(manager, employee.desk.id);
+    if (deskBusy) {
+      return deskBusy.employee.id === employee.id ? deskBusy : null;
+    }
+
+    const baseQuery = () => {
+      let query = manager
         .getRepository(Ticket)
         .createQueryBuilder('ticket')
         .innerJoinAndSelect('ticket.serviceType', 'serviceType')
-        .leftJoinAndSelect('ticket.reservedDesk', 'reservedDesk')
         .where('ticket.siteId = :siteId', { siteId: employee.site?.id })
         .andWhere('ticket.status IN (:...statuses)', {
           statuses: LIVE_QUEUE_STATUSES,
@@ -1893,34 +2301,22 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         .andWhere('ticket.country = :country', { country: employeeCountry })
         .setLock('pessimistic_write')
         .setOnLocked('skip_locked');
-
-    let query = baseQuery()
-      .andWhere('ticket.reservedDeskId = :deskId', { deskId: employee.desk.id })
-      .orderBy('ticket.priority', 'DESC')
-      .addOrderBy('ticket.scheduledAt', 'ASC', 'NULLS LAST')
-      .addOrderBy('ticket.createdAt', 'ASC')
-      .limit(1);
-
-    if (employee.serviceTypeIds?.length) {
-      query = query.andWhere('ticket.serviceTypeId IN (:...serviceTypeIds)', {
-        serviceTypeIds: employee.serviceTypeIds,
-      });
-    }
-
-    let ticket = await query.getOne();
-
-    if (!ticket) {
-      query = baseQuery()
-        .orderBy('ticket.priority', 'DESC')
-        .addOrderBy('ticket.scheduledAt', 'ASC', 'NULLS LAST')
-        .addOrderBy('ticket.createdAt', 'ASC')
-        .limit(1);
       if (employee.serviceTypeIds?.length) {
         query = query.andWhere('ticket.serviceTypeId IN (:...serviceTypeIds)', {
           serviceTypeIds: employee.serviceTypeIds,
         });
       }
-      ticket = await query.getOne();
+      return applyQueueDispatchOrder(query).limit(1);
+    };
+
+    let ticket = await baseQuery()
+      .andWhere('ticket.reservedDeskId = :deskId', {
+        deskId: employee.desk.id,
+      })
+      .getOne();
+
+    if (!ticket) {
+      ticket = await baseQuery().getOne();
     }
 
     if (!ticket) return null;
@@ -1954,15 +2350,19 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     });
     const match =
       employees.find(
-        (employee) => employee.desk?.id === ticket.reservedDesk?.id,
+        (employee) =>
+          employee.desk?.id === ticket.reservedDesk?.id &&
+          employeeWorkCountry(employee) === ticket.country,
       ) ??
       employees.find(
         (employee) =>
           employee.site?.id === ticket.site.id &&
           Boolean(employee.desk) &&
-          (employee.country ?? employee.desk?.country) === ticket.country,
+          employeeWorkCountry(employee) === ticket.country,
       );
     if (!match?.desk) return null;
+    const deskBusy = await this.activeDeskAssignment(manager, match.desk.id);
+    if (deskBusy) return null;
     ticket.status = 'ASSIGNED';
     match.status = 'RESERVED';
     const assignment = manager.create(Assignment, {
@@ -1990,6 +2390,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       .getRepository(Ticket)
       .createQueryBuilder('peer')
       .where('peer.siteId = :siteId', { siteId: ticket.site.id })
+      .andWhere('peer.country = :country', { country: ticket.country })
       .andWhere('peer.status IN (:...statuses)', {
         statuses: LIVE_QUEUE_STATUSES,
       })
@@ -2019,12 +2420,20 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     servedBy?: string,
     lookupCode?: string,
   ) {
+    const kind = ticketKind(ticket.scheduledAt);
+    const showDesk =
+      Boolean(deskLabel) && clientShowsDesk(ticket.status, kind);
     return {
       id: ticket.id,
       number: ticket.number,
       status: ticket.status,
+      kind,
+      statusLabel: clientStatusLabel(ticket.status, kind),
+      progressStep: clientProgressStep(ticket.status, kind),
+      progressLabels: clientProgressLabels(kind),
+      showDesk,
       serviceName: service.name,
-      deskLabel,
+      deskLabel: showDesk ? deskLabel : undefined,
       createdAt: ticket.createdAt.toISOString(),
       queuePosition: queueMeta?.queuePosition ?? 0,
       estimatedWaitMinutes: queueMeta?.estimatedWaitMinutes ?? 0,

@@ -3,9 +3,14 @@ import { AddPersonalDataConsentAt1735689600000 } from './1735689600000-AddPerson
 import { AddCheckInAndSlotHold1777900000000 } from './1777900000000-AddCheckInAndSlotHold';
 import { AddDepartureArrivalDates1778000000000 } from './1778000000000-AddDepartureArrivalDates';
 
+import { AddDeskDisplayNumber1778100000000 } from './1778100000000-AddDeskDisplayNumber';
+import { AddTicketPhone1778200000000 } from './1778200000000-AddTicketPhone';
+
 export const appMigrations = [
   CreateInitialSchema1700000000000,
   AddPersonalDataConsentAt1735689600000,
   AddCheckInAndSlotHold1777900000000,
   AddDepartureArrivalDates1778000000000,
+  AddDeskDisplayNumber1778100000000,
+  AddTicketPhone1778200000000,
 ];
