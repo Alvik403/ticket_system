@@ -56,7 +56,6 @@ import {
   clientProgressStep,
   clientShowsDesk,
   clientStatusLabel,
-  managerStatusHint,
   managerStatusPickerOptions,
   staffStatusLabel,
   ticketKind,
@@ -509,10 +508,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async getPublicBoard(
-    siteCode?: string,
-    country?: ClientCountry,
-  ) {
+  async getPublicBoard(siteCode?: string, country?: ClientCountry) {
     const siteRepository = this.dataSource.getRepository(Site);
     const site = siteCode
       ? await siteRepository.findOne({
@@ -962,7 +958,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       workCountry ?? undefined,
     );
     const queueTickets = employee.site?.id
-      ? await this.listLiveQueueTickets(employee.site.id, workCountry ?? undefined)
+      ? await this.listLiveQueueTickets(
+          employee.site.id,
+          workCountry ?? undefined,
+        )
       : [];
     const dayBookings = employee.site?.id
       ? await this.listDayBookings(employee.site.id, workCountry ?? undefined)
@@ -1077,8 +1076,12 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         : undefined,
       departureDate: ticket.departureDate,
       arrivalDate: ticket.arrivalDate,
+      phone: ticket.phone,
+      openedAt: ticket.createdAt.toISOString(),
+      closedAt: ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(ticket.status)
+        ? ticket.updatedAt.toISOString()
+        : undefined,
       deskLabel: ticket.reservedDesk?.label,
-      statusHint: managerStatusHint(kind, ticket.status),
       statusOptions: managerStatusPickerOptions(kind, ticket.status),
     };
   }
@@ -1112,9 +1115,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       if (blockReason) {
         throw new BadRequestException(blockReason);
       }
-      const inProgress = (MANAGER_IN_PROGRESS_STATUSES as readonly string[]).includes(
-        status,
-      );
+      const inProgress = (
+        MANAGER_IN_PROGRESS_STATUSES as readonly string[]
+      ).includes(status);
       const wasInProgress = (
         MANAGER_IN_PROGRESS_STATUSES as readonly string[]
       ).includes(previous);
@@ -1188,8 +1191,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         ['COMPLETED', 'CANCELLED', 'NO_SHOW', 'BOOKED', 'REQUEUED'].includes(
           status,
         ) ||
-        (status === 'CHECKED_IN' &&
-          ['CALLED', 'ASSIGNED'].includes(previous))
+        (status === 'CHECKED_IN' && ['CALLED', 'ASSIGNED'].includes(previous))
       ) {
         assignment = await manager.findOne(Assignment, {
           where: { ticket: { id: ticket.id }, active: true },
@@ -1214,7 +1216,11 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         to: status,
       });
 
-      if (employeeToDispatch?.desk && employeeToDispatch.status === 'AVAILABLE') {
+      if (
+        status !== 'REQUEUED' &&
+        employeeToDispatch?.desk &&
+        employeeToDispatch.status === 'AVAILABLE'
+      ) {
         await this.assignNext(manager, employeeToDispatch);
       }
 
@@ -2421,8 +2427,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     lookupCode?: string,
   ) {
     const kind = ticketKind(ticket.scheduledAt);
-    const showDesk =
-      Boolean(deskLabel) && clientShowsDesk(ticket.status, kind);
+    const showDesk = Boolean(deskLabel) && clientShowsDesk(ticket.status, kind);
     return {
       id: ticket.id,
       number: ticket.number,
@@ -2455,6 +2460,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         ticket.durationMinutes,
       ),
       checkedInAt: ticket.checkedInAt?.toISOString(),
+      phone: ticket.phone,
+      closedAt: ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(ticket.status)
+        ? ticket.updatedAt.toISOString()
+        : undefined,
     };
   }
 

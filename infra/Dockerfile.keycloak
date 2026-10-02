@@ -8,7 +8,8 @@ FROM quay.io/keycloak/keycloak:26.3
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 USER 0
+COPY infra/scripts/keycloak-apply-client-urls.sh /opt/keycloak/keycloak-apply-client-urls.sh
 COPY infra/scripts/keycloak-prod-apply.sh /opt/keycloak/keycloak-prod-apply.sh
-RUN chmod +x /opt/keycloak/keycloak-prod-apply.sh
+RUN chmod +x /opt/keycloak/keycloak-apply-client-urls.sh /opt/keycloak/keycloak-prod-apply.sh
 USER 1000
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]

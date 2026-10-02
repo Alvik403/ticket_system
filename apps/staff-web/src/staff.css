@@ -788,6 +788,19 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
   justify-content: space-between;
   gap: 16px;
 }
+.manager-list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+.manager-list-filters select {
+  min-width: 160px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #d0d7de);
+  font: inherit;
+}
 .page-header-titles {
   display: grid;
   gap: 4px;

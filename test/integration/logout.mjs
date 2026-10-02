@@ -82,6 +82,12 @@ assert.ok((await meBefore.json())?.subject, 'Should be logged in before logout')
 
 const logoutResponse = await fetchTracked(`${api}/auth/logout`, jar);
 assert.equal(logoutResponse.status, 302, 'Logout should redirect');
+const logoutLocation = logoutResponse.headers.get('location') ?? '';
+assert.match(
+  logoutLocation,
+  /openid-connect\/logout/,
+  'Logout should end the Keycloak SSO session',
+);
 
 const meAfter = await fetchTracked(`${api}/auth/me`, jar);
 assert.equal(meAfter.status, 401, 'Session should be cleared after logout');

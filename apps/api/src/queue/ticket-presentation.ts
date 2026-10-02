@@ -203,7 +203,7 @@ export function managerNextStatuses(
     const walkIn: Partial<Record<TicketStatus, TicketStatus[]>> = {
       CHECKED_IN: ['CALLED', 'NO_SHOW'],
       REQUEUED: ['CALLED', 'NO_SHOW'],
-      ASSIGNED: ['CALLED', 'NO_SHOW'],
+      ASSIGNED: ['CALLED', 'REQUEUED', 'NO_SHOW'],
       CALLED: ['IN_SERVICE', 'REQUEUED', 'NO_SHOW'],
       IN_SERVICE: ['COMPLETED'],
     };
@@ -238,7 +238,9 @@ export function validateManagerStatusChange(
   }
   const allowed = managerNextStatuses(kind, from);
   if (!allowed.includes(to)) {
-    const hints = allowed.map((status) => managerActionLabel(status, kind, from));
+    const hints = allowed.map((status) =>
+      managerActionLabel(status, kind, from),
+    );
     if (!hints.length) {
       return `Сейчас «${managerSimpleLabel(from, kind)}» — дальше менять нельзя.`;
     }
@@ -247,7 +249,10 @@ export function validateManagerStatusChange(
   return null;
 }
 
-export function managerStatusHint(kind: TicketKind, from: TicketStatus): string {
+export function managerStatusHint(
+  kind: TicketKind,
+  from: TicketStatus,
+): string {
   if (MANAGER_TERMINAL.includes(from)) {
     return 'Талон закрыт — новый статус не нужен.';
   }

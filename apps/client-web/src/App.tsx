@@ -47,8 +47,10 @@ type Ticket = {
   durationMinutes?: number
   country?: Country
   fullName?: string
+  phone?: string
   departureDate?: string
   arrivalDate?: string
+  closedAt?: string
   clientNotice?: string
   servedBy?: string
   lookupCode?: string
@@ -236,6 +238,7 @@ function App() {
           setTicket(current)
           setTab('book')
           setStep(5)
+          setError('')
         }
       } catch {
         setError('Сервис временно недоступен')
@@ -266,7 +269,7 @@ function App() {
   }, [ticketNumber])
 
   useEffect(() => {
-    if (!siteId || !selectedDate || !country || step < 2) return
+    if (!siteId || !selectedDate || !country || step < 2 || step > 4) return
     setLoadingSlots(true)
     fetch(
       `${API}/public/sites/${siteId}/slots?date=${selectedDate}&country=${country}`,
@@ -563,6 +566,11 @@ function App() {
 
                 <div className="ticket-details">
                   <p className="ticket-client-name">{ticket.fullName}</p>
+                  {ticket.phone && (
+                    <p className="ticket-phone muted">
+                      Телефон: {formatPhoneInput(ticket.phone)}
+                    </p>
+                  )}
                   {ticket.kind !== 'walkIn' && (
                     <p className="ticket-schedule">{formatScheduledDisplay(ticket)}</p>
                   )}

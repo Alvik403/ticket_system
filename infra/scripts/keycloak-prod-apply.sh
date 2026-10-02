@@ -22,31 +22,8 @@ echo "Keycloak: вход в master"
 echo "Keycloak: sslRequired=external"
 "$kcadm" update realms/ticket-system -s sslRequired=external
 
-echo "Keycloak: поиск клиента ticket-staff"
-client_id="$(
-  "$kcadm" get clients -r ticket-system -q clientId=ticket-staff --fields id \
-    | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    | head -n 1
-)"
-if [[ -z "$client_id" ]]; then
-  echo "Клиент ticket-staff не найден в realm ticket-system" >&2
-  exit 1
-fi
-
-client_file="$(mktemp)"
-trap 'rm -f "$client_file"' EXIT
-cat > "$client_file" <<EOF
-{
-  "redirectUris": ["${OIDC_CALLBACK_URL}"],
-  "webOrigins": ["${PUBLIC_ORIGIN}"],
-  "attributes": {
-    "post.logout.redirect.uris": "${STAFF_APP_URL}"
-  }
-}
-EOF
-
-echo "Keycloak: callback ${OIDC_CALLBACK_URL}"
-"$kcadm" update "clients/${client_id}" -r ticket-system --merge -f "$client_file"
+export OIDC_CALLBACK_URL STAFF_APP_URL PUBLIC_ORIGIN
+/opt/keycloak/keycloak-apply-client-urls.sh
 
 demo_emails=(
   admin@example.com

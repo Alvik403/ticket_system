@@ -374,6 +374,7 @@ export class AuthController {
       secure: secureCookies,
     });
 
+    response.setHeader('Cache-Control', 'no-store');
     try {
       const configuration = await this.oidcConfiguration(origin);
       const logoutUrl = buildEndSessionUrl(configuration, {

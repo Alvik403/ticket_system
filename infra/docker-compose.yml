@@ -10,8 +10,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      keycloak:
-        condition: service_healthy
+      keycloak-config:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   api:
@@ -38,15 +38,15 @@ services:
       OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:18080/api/auth/callback}
       STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:18080/staff/}
       KEYCLOAK_ADMIN_URL: http://keycloak:8080
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: change-me
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:-change-me}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      keycloak:
-        condition: service_healthy
+      keycloak-config:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -94,9 +94,11 @@ services:
     image: quay.io/keycloak/keycloak:26.3
     command: start-dev --import-realm
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: change-me
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:-change-me}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-replace-in-production}
+      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:18080/api/auth/callback}
+      STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:18080/staff/}
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
@@ -107,8 +109,10 @@ services:
     ports:
       - "18081:8080"
     volumes:
+      - keycloak-data:/opt/keycloak/data
       - ./keycloak/ticket-system-realm.dev.json:/opt/keycloak/data/import/ticket-system-realm.json:ro
       - ./keycloak-theme/ticket:/opt/keycloak/themes/ticket:ro
+      - ./scripts/keycloak-apply-client-urls.sh:/opt/keycloak/keycloak-apply-client-urls.sh:ro
     healthcheck:
       test:
         [
@@ -121,6 +125,28 @@ services:
       start_period: 120s
     restart: unless-stopped
 
+  keycloak-config:
+    image: quay.io/keycloak/keycloak:26.3
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        sed 's/\r$//' /opt/keycloak/keycloak-apply-client-urls.sh > /tmp/keycloak-apply-client-urls.sh
+        exec /bin/bash /tmp/keycloak-apply-client-urls.sh
+    environment:
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:-change-me}
+      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:18080/api/auth/callback}
+      STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:18080/staff/}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:18080}
+    volumes:
+      - ./scripts/keycloak-apply-client-urls.sh:/opt/keycloak/keycloak-apply-client-urls.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
   postgres-data:
   redis-data:
+  keycloak-data:

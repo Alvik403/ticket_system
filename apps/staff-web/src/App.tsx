@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { auditPresentation } from './auditLabels'
 import { ticketStatusLabel } from './labels'
 import './staff.css'
@@ -65,6 +65,9 @@ type BookingRow = {
   deskLabel?: string
   statusHint?: string
   statusOptions?: Array<{ value: string; label: string; current?: boolean }>
+  phone?: string
+  openedAt?: string
+  closedAt?: string
 }
 
 function managerSlotTimeLabel(row: BookingRow) {
@@ -112,6 +115,27 @@ function countryLabel(country: 'RF' | 'CN') {
   return country === 'RF' ? 'РФ' : 'Заграничная'
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatPhoneDisplay(phone?: string) {
+  if (!phone) return '—'
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 11) {
+    return `+${digits[0]} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9)}`
+  }
+  return phone
+}
+
 async function readApiError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => null) as { message?: string | string[] } | null
   if (!payload?.message) return fallback
@@ -138,6 +162,7 @@ function App() {
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null)
   const [statusPending, setStatusPending] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [newManagerUsername, setNewManagerUsername] = useState('')
   const [newManagerFirstName, setNewManagerFirstName] = useState('')
   const [newManagerLastName, setNewManagerLastName] = useState('')
@@ -498,6 +523,26 @@ function App() {
     })
   }
 
+  const statusFilterOptions = useMemo(() => {
+    const statuses = new Map<string, string>()
+    for (const row of bookings) {
+      if (!statuses.has(row.status)) {
+        statuses.set(
+          row.status,
+          row.statusLabel ?? ticketStatusLabel[row.status] ?? row.status,
+        )
+      }
+    }
+    return [...statuses.entries()].sort((a, b) =>
+      a[1].localeCompare(b[1], 'ru'),
+    )
+  }, [bookings])
+
+  const filteredBookings = useMemo(() => {
+    if (statusFilter === 'ALL') return bookings
+    return bookings.filter((row) => row.status === statusFilter)
+  }, [bookings, statusFilter])
+
   if (!user) return <main className="loading">Переход к форме входа…</main>
 
   const selectedBooking =
@@ -563,23 +608,39 @@ function App() {
                     </p>
                   )}
                 </div>
-                <label className="date-picker-inline">
-                  Дата
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(event) => {
-                      setSelectedDate(event.target.value)
-                      setSelectedBookingId(null)
-                    }}
-                  />
-                </label>
+                <div className="manager-list-filters">
+                  <label className="date-picker-inline">
+                    Дата
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(event) => {
+                        setSelectedDate(event.target.value)
+                        setSelectedBookingId(null)
+                      }}
+                    />
+                  </label>
+                  <label className="date-picker-inline">
+                    Статус
+                    <select
+                      value={statusFilter}
+                      onChange={(event) => setStatusFilter(event.target.value)}
+                    >
+                      <option value="ALL">Все</option>
+                      {statusFilterOptions.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </header>
 
               <div className="manager-layout">
                 <section className="manager-bookings-panel">
                   <ul className="manager-bookings-list">
-                    {bookings.map((row) => (
+                    {filteredBookings.map((row) => (
                       <li key={row.id}>
                         <button
                           type="button"
@@ -606,6 +667,13 @@ function App() {
                         в разделе «Менеджеры».
                       </li>
                     )}
+                    {!filteredBookings.length &&
+                      bookings.length > 0 &&
+                      !bookingsLoading && (
+                      <li className="manager-bookings-empty">
+                        Нет талонов с выбранным статусом
+                      </li>
+                    )}
                     {!bookings.length && !bookingsLoading && managerCountry && (
                       <li className="manager-bookings-empty">
                         На выбранную дату талонов по направлению «{countryLabel(managerCountry)}»
@@ -623,25 +691,22 @@ function App() {
                     <article className="client-card">
                       <div className="number">{selectedBooking.number}</div>
                       <h2>{selectedBooking.fullName ?? '—'}</h2>
-                      <p className="client-detail client-detail-status">
-                        {selectedBooking.statusLabel ??
-                          ticketStatusLabel[selectedBooking.status] ??
-                          selectedBooking.status}
+                      <p className="client-detail">
+                        Телефон: {formatPhoneDisplay(selectedBooking.phone)}
                       </p>
                       <p className="client-detail">
-                        Дата: {formatDateLabel(selectedDate)}
+                        Слот: {formatDateLabel(selectedDate)},{' '}
+                        {managerSlotTimeLabel(selectedBooking)}
                       </p>
-                      <p className="client-detail">
-                        Время: {managerSlotTimeLabel(selectedBooking)}
-                      </p>
-                      {selectedBooking.scheduledLabel &&
-                        selectedBooking.slotTime &&
-                        selectedBooking.scheduledLabel !== selectedBooking.slotTime && (
-                          <p className="client-detail">{selectedBooking.scheduledLabel}</p>
-                        )}
                       <p className="client-detail">
                         Выезд: {selectedBooking.departureDate ?? '—'} · Приезд:{' '}
                         {selectedBooking.arrivalDate ?? '—'}
+                      </p>
+                      <p className="client-detail">
+                        Талон открыт: {formatDateTime(selectedBooking.openedAt)}
+                      </p>
+                      <p className="client-detail">
+                        Талон закрыт: {formatDateTime(selectedBooking.closedAt)}
                       </p>
                       <p className="client-detail">
                         {selectedBooking.country === 'CN' ? 'Заграничная' : 'РФ'}
@@ -654,9 +719,6 @@ function App() {
                             ticketStatusLabel[selectedBooking.status] ??
                             selectedBooking.status}
                         </p>
-                        {selectedBooking.statusHint && (
-                          <p className="status-hint">{selectedBooking.statusHint}</p>
-                        )}
                         <div className="status-actions">
                           {(selectedBooking.statusOptions ?? [])
                             .filter((option) => !option.current)

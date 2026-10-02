@@ -37,6 +37,31 @@ docker compose -f infra/docker-compose.yml up --build -d
 Данные PostgreSQL и Redis сохраняются в Docker volumes. Для полного удаления
 локальных данных добавьте `-v` к команде `down`.
 
+**Доступ по IP (не localhost):** задайте публичные URL до запуска compose.
+Сервис `keycloak-config` автоматически регистрирует callback, web origin и
+post-logout URL после готовности Keycloak. Данные Keycloak сохраняются в
+volume `keycloak-data`.
+
+В `.env` задайте (порт 18080 обязателен):
+
+```text
+PUBLIC_ORIGIN=http://94.231.221.214:18080
+OIDC_ISSUER=http://94.231.221.214:18080/realms/ticket-system
+OIDC_CALLBACK_URL=http://94.231.221.214:18080/api/auth/callback
+STAFF_APP_URL=http://94.231.221.214:18080/staff/
+CLIENT_ORIGIN=http://94.231.221.214:18080
+STAFF_ORIGIN=http://94.231.221.214:18080
+```
+
+Запускайте compose из корня с явным `.env`:
+
+```text
+docker compose --env-file .env -f infra/docker-compose.yml up --build -d --wait
+docker compose --env-file .env -f infra/docker-compose.yml logs keycloak-config
+```
+
+В логе должна быть строка `Keycloak: redirect http://<IP>:18080/api/auth/callback`.
+
 ### Запуск приложений через npm
 
 1. Скопировать `.env.example` в `.env` и заменить секреты.
