@@ -43,6 +43,9 @@ export class CreateTicketDto {
   @IsUUID() serviceTypeId!: string;
   @IsIn(['RF', 'CN']) country!: ClientCountry;
   @IsString() @MinLength(3) @MaxLength(200) fullName!: string;
+  @IsOptional() @IsString() @MaxLength(80) lastName?: string;
+  @IsOptional() @IsString() @MaxLength(80) firstName?: string;
+  @IsOptional() @IsString() @MaxLength(80) patronymic?: string;
   @IsDateString() departureDate!: string;
   @IsDateString() arrivalDate!: string;
   @IsDateString() scheduledAt!: string;
@@ -100,6 +103,9 @@ export class CreateWalkInTicketDto {
   @IsUUID() serviceTypeId!: string;
   @IsIn(['RF', 'CN']) country!: ClientCountry;
   @IsString() @MinLength(3) @MaxLength(200) fullName!: string;
+  @IsOptional() @IsString() @MaxLength(80) lastName?: string;
+  @IsOptional() @IsString() @MaxLength(80) firstName?: string;
+  @IsOptional() @IsString() @MaxLength(80) patronymic?: string;
   @IsDateString() scheduledAt!: string;
   @IsString()
   @MinLength(10)

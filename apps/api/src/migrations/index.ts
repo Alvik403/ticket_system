@@ -5,6 +5,7 @@ import { AddDepartureArrivalDates1778000000000 } from './1778000000000-AddDepart
 
 import { AddDeskDisplayNumber1778100000000 } from './1778100000000-AddDeskDisplayNumber';
 import { AddTicketPhone1778200000000 } from './1778200000000-AddTicketPhone';
+import { AddDeskCreatedAt1778300000000 } from './1778300000000-AddDeskCreatedAt';
 
 export const appMigrations = [
   CreateInitialSchema1700000000000,
@@ -13,4 +14,5 @@ export const appMigrations = [
   AddDepartureArrivalDates1778000000000,
   AddDeskDisplayNumber1778100000000,
   AddTicketPhone1778200000000,
+  AddDeskCreatedAt1778300000000,
 ];

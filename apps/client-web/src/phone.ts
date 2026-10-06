@@ -8,8 +8,13 @@ export function normalizePhoneDigits(value: string): string {
   return digits.slice(0, PHONE_DIGITS_TOTAL)
 }
 
-export function formatPhoneInput(value: string): string {
-  const digits = normalizePhoneDigits(value)
+export function formatPhoneInput(value: string, previous = ''): string {
+  let digits = normalizePhoneDigits(value)
+  const previousDigits = normalizePhoneDigits(previous)
+  // Backspace on "-" or ")" removes only the separator. Drop the digit behind it.
+  if (value.length < previous.length && digits === previousDigits && digits.length > 1) {
+    digits = digits.slice(0, -1)
+  }
   if (!digits) return ''
   if (digits.length <= 1) return '+7'
   const rest = digits.slice(1)

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toDataURL } from 'qrcode'
+import { contactFieldsError } from './person'
 import {
   formatPhoneInput,
   normalizePhoneDigits,
-  PHONE_DIGITS_TOTAL,
 } from './phone'
 import './queue.css'
 import './kiosk.css'
@@ -133,18 +133,44 @@ export default function Kiosk() {
 
   useEffect(() => {
     if (!siteId || !formOpen) return
-    setSlotsLoading(true)
-    setError('')
-    void fetchJson<SlotRow[]>(
-      `${API}/public/sites/${siteId}/slots?date=${today}&country=${country}`,
-    )
-      .then((rows) => {
-        setSlots(rows)
-        const firstFree = rows.find((row) => row.available)
-        setSelectedSlot(firstFree?.scheduledAt ?? '')
-      })
-      .catch(() => setError('Не удалось загрузить слоты на сегодня'))
-      .finally(() => setSlotsLoading(false))
+    let active = true
+    const load = (initial: boolean) => {
+      if (initial) {
+        setSlotsLoading(true)
+        setError('')
+      }
+      void fetchJson<SlotRow[]>(
+        `${API}/public/sites/${siteId}/slots?date=${today}&country=${country}`,
+      )
+        .then((rows) => {
+          if (!active) return
+          const now = Date.now()
+          const upcoming = rows.filter(
+            (row) => new Date(row.scheduledAt).getTime() > now,
+          )
+          setSlots(upcoming)
+          setSelectedSlot((current) => {
+            if (
+              upcoming.some((row) => row.scheduledAt === current && row.available)
+            ) {
+              return current
+            }
+            return upcoming.find((row) => row.available)?.scheduledAt ?? ''
+          })
+        })
+        .catch(() => {
+          if (active && initial) setError('Не удалось загрузить слоты на сегодня')
+        })
+        .finally(() => {
+          if (active && initial) setSlotsLoading(false)
+        })
+    }
+    load(true)
+    const timer = window.setInterval(() => load(false), 15_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
   }, [siteId, country, formOpen, today])
 
   useEffect(() => {
@@ -175,19 +201,24 @@ export default function Kiosk() {
     .filter(Boolean)
     .join(' ')
   const phoneNormalized = normalizePhoneDigits(phone)
-  const canSubmit =
-    lastName.trim().length >= 2 &&
-    firstName.trim().length >= 2 &&
-    patronymic.trim().length >= 2 &&
-    phoneNormalized.length === PHONE_DIGITS_TOTAL &&
-    Boolean(selectedSlot) &&
-    consent &&
-    Boolean(siteId) &&
-    Boolean(serviceTypeId)
+  const contactError = contactFieldsError({
+    lastName,
+    firstName,
+    patronymic,
+    phoneDigits: phoneNormalized,
+  })
 
   async function issueTicket(event: FormEvent) {
     event.preventDefault()
-    if (!canSubmit || loading) return
+    if (loading) return
+    if (!consent) {
+      setError('Необходимо согласие на обработку персональных данных')
+      return
+    }
+    if (contactError || !selectedSlot || !siteId || !serviceTypeId) {
+      setError(contactError ?? 'Выберите свободное время')
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -204,6 +235,9 @@ export default function Kiosk() {
           serviceTypeId,
           country,
           fullName,
+          lastName: lastName.trim(),
+          firstName: firstName.trim(),
+          patronymic: patronymic.trim(),
           phone: phoneNormalized,
           scheduledAt: selectedSlot,
           personalDataConsent: true,
@@ -295,11 +329,12 @@ export default function Kiosk() {
                   <p className="kiosk-slots-hint">На сегодня свободных слотов нет</p>
                 )}
                 <div className="kiosk-slot-grid">
-                  {slots.map((row) => (
+                  {slots
+                    .filter((row) => row.available)
+                    .map((row) => (
                     <button
                       key={row.scheduledAt}
                       type="button"
-                      disabled={!row.available}
                       className={`kiosk-slot-btn${
                         selectedSlot === row.scheduledAt ? ' selected' : ''
                       }`}
@@ -346,7 +381,7 @@ export default function Kiosk() {
                   type="tel"
                   inputMode="tel"
                   value={phone}
-                  onChange={(event) => setPhone(formatPhoneInput(event.target.value))}
+                  onChange={(event) => setPhone(formatPhoneInput(event.target.value, phone))}
                   placeholder="+7 (900) 000-00-00"
                   autoComplete="tel"
                 />
@@ -384,7 +419,7 @@ export default function Kiosk() {
                 >
                   Назад
                 </button>
-                <button type="submit" disabled={!canSubmit || loading}>
+                <button type="submit" disabled={loading}>
                   {loading ? 'Выдаём…' : 'Получить талон'}
                 </button>
               </div>

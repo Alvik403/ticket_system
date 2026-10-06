@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { BookingCalendar } from './BookingCalendar'
 import { countryLabel, ticketStatusLabel } from './labels'
+import { contactFieldsError } from './person'
 import {
   formatPhoneInput,
   normalizePhoneDigits,
-  PHONE_DIGITS_TOTAL,
 } from './phone'
 import './queue.css'
 
@@ -270,25 +270,49 @@ function App() {
 
   useEffect(() => {
     if (!siteId || !selectedDate || !country || step < 2 || step > 4) return
-    setLoadingSlots(true)
-    fetch(
-      `${API}/public/sites/${siteId}/slots?date=${selectedDate}&country=${country}`,
-    )
-      .then(async (response) => {
-        if (!response.ok) throw new Error('slots')
-        return response.json() as Promise<Slot[]>
-      })
-      .then((value) => {
-        setSlots(value)
-        setSelectedSlot((current) => {
-          const match = value.find((slot) => slot.scheduledAt === current?.scheduledAt)
-          return match && (match.available || hold?.scheduledAt === match.scheduledAt)
-            ? { ...match, available: true }
-            : null
+    let active = true
+    const load = (initial: boolean) => {
+      if (initial) setLoadingSlots(true)
+      fetch(
+        `${API}/public/sites/${siteId}/slots?date=${selectedDate}&country=${country}`,
+      )
+        .then(async (response) => {
+          if (!response.ok) throw new Error('slots')
+          return response.json() as Promise<Slot[]>
         })
-      })
-      .catch(() => setError('Не удалось загрузить свободное время'))
-      .finally(() => setLoadingSlots(false))
+        .then((value) => {
+          if (!active) return
+          const now = Date.now()
+          const upcoming = value.filter(
+            (slot) => new Date(slot.scheduledAt).getTime() > now,
+          )
+          setSlots(upcoming)
+          setError((current) =>
+            current === 'Не удалось загрузить свободное время' ? '' : current,
+          )
+          setSelectedSlot((current) => {
+            const match = upcoming.find(
+              (slot) => slot.scheduledAt === current?.scheduledAt,
+            )
+            return match &&
+              (match.available || hold?.scheduledAt === match.scheduledAt)
+              ? { ...match, available: true }
+              : null
+          })
+        })
+        .catch(() => {
+          if (active && initial) setError('Не удалось загрузить свободное время')
+        })
+        .finally(() => {
+          if (active && initial) setLoadingSlots(false)
+        })
+    }
+    load(true)
+    const timer = window.setInterval(() => load(false), 15_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
   }, [siteId, selectedDate, country, step, hold?.scheduledAt])
 
   useEffect(() => {
@@ -323,15 +347,16 @@ function App() {
     [lastName, firstName, patronymic],
   )
   const phoneNormalized = normalizePhoneDigits(phone)
-  const canSubmit =
-    lastName.trim().length >= 2 &&
-    firstName.trim().length >= 2 &&
-    patronymic.trim().length >= 2 &&
-    phoneNormalized.length === PHONE_DIGITS_TOTAL &&
-    departureDate &&
-    arrivalDate &&
-    arrivalDate >= departureDate &&
-    Boolean(hold)
+  const contactError = contactFieldsError({
+    lastName,
+    firstName,
+    patronymic,
+    phoneDigits: phoneNormalized,
+    country,
+    departureDate,
+    arrivalDate,
+    requireTravelDates: true,
+  })
 
   const availableCount = useMemo(
     () => slots.filter((slot) => slot.available || slot.scheduledAt === hold?.scheduledAt).length,
@@ -389,8 +414,22 @@ function App() {
     setHold(await response.json())
   }
 
+  function continueToConfirm() {
+    if (contactError || !hold) {
+      setError(contactError ?? 'Выберите время снова')
+      return
+    }
+    setError('')
+    setStep(4)
+  }
+
   async function createTicket() {
     setError('')
+    if (contactError) {
+      setError(contactError)
+      setStep(3)
+      return
+    }
     if (!siteId || !serviceTypeId || !country || !selectedSlot || !hold) return
     const response = await fetch(`${API}/public/tickets`, {
       method: 'POST',
@@ -404,6 +443,9 @@ function App() {
         serviceTypeId,
         country,
         fullName: fullName.trim(),
+        lastName: lastName.trim(),
+        firstName: firstName.trim(),
+        patronymic: patronymic.trim(),
         phone: phoneNormalized,
         departureDate,
         arrivalDate,
@@ -729,17 +771,22 @@ function App() {
                       ) : slots.length ? (
                         <>
                           <p className="slot-hint muted">
-                            Свободно: {availableCount} из {slots.length}
+                            Свободно: {availableCount}
                           </p>
                           <div className="slot-grid slot-grid-compact">
-                            {slots.map((slot) => {
+                            {slots
+                              .filter(
+                                (slot) =>
+                                  slot.available ||
+                                  hold?.scheduledAt === slot.scheduledAt,
+                              )
+                              .map((slot) => {
                               const held = hold?.scheduledAt === slot.scheduledAt
                               return (
                                 <button
                                   key={slot.scheduledAt}
                                   type="button"
-                                  disabled={!slot.available && !held}
-                                  className={`slot${!slot.available && !held ? ' unavailable' : ''}${held ? ' selected' : ''}`}
+                                  className={`slot${held ? ' selected' : ''}`}
                                   onClick={() => void holdSelectedSlot(slot)}
                                 >
                                   {slot.time}
@@ -799,7 +846,7 @@ function App() {
                       type="tel"
                       inputMode="tel"
                       value={phone}
-                      onChange={(event) => setPhone(formatPhoneInput(event.target.value))}
+                      onChange={(event) => setPhone(formatPhoneInput(event.target.value, phone))}
                       placeholder="+7 (900) 000-00-00"
                       autoComplete="tel"
                     />
@@ -853,7 +900,7 @@ function App() {
                   </label>
                   <div className="step-actions">
                     <button className="secondary" onClick={() => setStep(2)}>Назад</button>
-                    <button disabled={!canSubmit} onClick={() => setStep(4)}>Далее</button>
+                    <button type="button" onClick={continueToConfirm}>Далее</button>
                   </div>
                 </div>
               )}

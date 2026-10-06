@@ -77,6 +77,7 @@ export class Desk {
   @Column({ type: 'int', nullable: true }) displayNumber?: number | null;
   @Column({ type: 'varchar', default: 'RF' }) country!: ClientCountry;
   @Column({ default: true }) active!: boolean;
+  @CreateDateColumn() createdAt!: Date;
   @ManyToOne(() => Site, { nullable: false }) site!: Site;
 }
 

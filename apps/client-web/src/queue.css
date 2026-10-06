@@ -405,11 +405,17 @@ button.secondary { background: #e8f1fb; color: #1e518c; }
 .summary div {
   display: grid;
   gap: 4px;
+  min-width: 0;
   padding-bottom: 12px;
   border-bottom: 1px solid #e8eef5;
 }
 .summary dt { color: #64748b; font-size: 13px; font-weight: 700; }
-.summary dd { margin: 0; font-size: 15px; }
+.summary dd {
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 
 .ticket-panel {
   padding: 0;

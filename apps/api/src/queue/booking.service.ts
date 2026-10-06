@@ -124,17 +124,11 @@ export class BookingService {
     });
     const heldSlots = await this.rateLimit.listHolds();
 
-    return candidates.map((time) => {
+    return candidates.flatMap((time) => {
       const scheduledAt = this.slotToDate(date, time, timeZone);
       const startMs = scheduledAt.getTime();
       const endMs = startMs + duration * 60_000;
-      if (startMs <= now || !desks.length) {
-        return {
-          time,
-          scheduledAt: scheduledAt.toISOString(),
-          available: false,
-        };
-      }
+      if (startMs <= now || !desks.length) return [];
       const busy = new Set<string>();
       for (const ticket of tickets) {
         if (!ticket.scheduledAt || !ticket.reservedDesk?.id) continue;
@@ -159,11 +153,13 @@ export class BookingService {
           busy.add(block.employee.desk.id);
         }
       }
-      return {
-        time,
-        scheduledAt: scheduledAt.toISOString(),
-        available: desks.some((desk) => !busy.has(desk.id)),
-      };
+      return [
+        {
+          time,
+          scheduledAt: scheduledAt.toISOString(),
+          available: desks.some((desk) => !busy.has(desk.id)),
+        },
+      ];
     });
   }
 

@@ -45,6 +45,7 @@ import {
   type AssignmentAction,
 } from './queue.rules';
 import { BookingService } from './booking.service';
+import { assertPersonInput } from './person-input';
 import {
   BOARD_COLUMNS,
   buildPublicBoardColumns,
@@ -236,11 +237,78 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private resolvePerson(
+    input: {
+      fullName: string;
+      lastName?: string;
+      firstName?: string;
+      patronymic?: string;
+      phone: string;
+      country: ClientCountry;
+      departureDate?: string;
+      arrivalDate?: string;
+    },
+    requireTravelDates: boolean,
+  ) {
+    if (input.lastName || input.firstName || input.patronymic) {
+      return assertPersonInput({
+        lastName: input.lastName ?? '',
+        firstName: input.firstName ?? '',
+        patronymic: input.patronymic ?? '',
+        phone: input.phone,
+        country: input.country,
+        departureDate: input.departureDate,
+        arrivalDate: input.arrivalDate,
+        requireTravelDates,
+      });
+    }
+    const parts = input.fullName.trim().split(/\s+/);
+    if (parts.length !== 3) {
+      throw new BadRequestException('Введите больше символов');
+    }
+    return assertPersonInput({
+      lastName: parts[0] ?? '',
+      firstName: parts[1] ?? '',
+      patronymic: parts[2] ?? '',
+      phone: input.phone,
+      country: input.country,
+      departureDate: input.departureDate,
+      arrivalDate: input.arrivalDate,
+      requireTravelDates,
+    });
+  }
+
+  private async assertPhoneSlotFree(
+    manager: EntityManager,
+    phone: string,
+    scheduledAt: Date,
+  ) {
+    const duplicate = await manager
+      .createQueryBuilder(Ticket, 'ticket')
+      .where(
+        `regexp_replace(coalesce(ticket.phone, ''), '\\D', '', 'g') = :phone`,
+        { phone },
+      )
+      .andWhere('ticket.scheduledAt = :scheduledAt', { scheduledAt })
+      .andWhere('ticket.status NOT IN (:...closed)', {
+        closed: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
+      })
+      .getOne();
+    if (duplicate) {
+      throw new ConflictException(
+        'Этот телефон уже записан на выбранное время',
+      );
+    }
+  }
+
   async createTicket(input: {
     siteId: string;
     serviceTypeId: string;
     country: ClientCountry;
     fullName: string;
+    lastName?: string;
+    firstName?: string;
+    patronymic?: string;
     phone: string;
     departureDate: string;
     arrivalDate: string;
@@ -256,11 +324,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     const durationMinutes = this.booking.durationFor(input.country);
     const departureDate = input.departureDate.trim();
     const arrivalDate = input.arrivalDate.trim();
-    if (arrivalDate < departureDate) {
-      throw new BadRequestException(
-        'Дата приезда не может быть раньше даты выезда',
-      );
-    }
+    const person = this.resolvePerson(input, true);
 
     return this.dataSource.transaction(async (manager) => {
       const site = await manager.findOneBy(Site, {
@@ -309,6 +373,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         durationMinutes,
         input.country,
       );
+      await this.assertPhoneSlotFree(manager, person.phone, scheduledAt);
       const reservedDesk = await this.booking.reserveDesk(
         input.siteId,
         input.country,
@@ -336,8 +401,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
             site,
             serviceType,
             country: input.country,
-            fullName: input.fullName.trim(),
-            phone: input.phone.trim(),
+            fullName: person.fullName,
+            phone: person.phone,
             departureDate,
             arrivalDate,
             personalDataConsentAt: new Date(),
@@ -392,6 +457,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     serviceTypeId: string;
     country: ClientCountry;
     fullName: string;
+    lastName?: string;
+    firstName?: string;
+    patronymic?: string;
     scheduledAt: string;
     phone: string;
     departureDate?: string;
@@ -406,10 +474,16 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Некорректное время слота');
     }
     const durationMinutes = this.booking.durationFor(input.country);
-    const phone = input.phone.replace(/\s/g, '').trim();
+    const person = this.resolvePerson(input, false);
     const departureDate = input.departureDate?.trim();
     const arrivalDate = input.arrivalDate?.trim();
-    if (departureDate && arrivalDate && arrivalDate < departureDate) {
+    if (departureDate && arrivalDate && input.country === 'CN') {
+      const dateError =
+        arrivalDate <= departureDate
+          ? 'Заграничные выезд оформляются больше одного дня'
+          : null;
+      if (dateError) throw new BadRequestException(dateError);
+    } else if (departureDate && arrivalDate && arrivalDate < departureDate) {
       throw new BadRequestException(
         'Дата приезда не может быть раньше даты выезда',
       );
@@ -455,6 +529,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         durationMinutes,
         input.country,
       );
+      await this.assertPhoneSlotFree(manager, person.phone, scheduledAt);
       const reservedDesk = await this.booking.reserveDesk(
         input.siteId,
         input.country,
@@ -480,8 +555,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
           site,
           serviceType,
           country: input.country,
-          fullName: input.fullName.trim(),
-          phone,
+          fullName: person.fullName,
+          phone: person.phone,
           departureDate: departureDate || undefined,
           arrivalDate: arrivalDate || undefined,
           personalDataConsentAt: new Date(),
@@ -1624,7 +1699,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     const desks = await this.dataSource.getRepository(Desk).find({
       where: { active: true },
       relations: { site: true },
-      order: { label: 'ASC' },
+      order: { createdAt: 'ASC', label: 'ASC' },
     });
     if (!desks.length) return [];
     const assigned = await this.dataSource.getRepository(Employee).find({
@@ -2028,9 +2103,11 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
             `Нельзя удалить стол — ${employee.displayName} обслуживает клиента`,
           );
         }
-        employee.desk = undefined;
-        await manager.save(employee);
       }
+      await manager.query(
+        `UPDATE "employee" SET "deskId" = NULL WHERE "deskId" = $1`,
+        [deskId],
+      );
 
       const historyRefs = await manager.count(Assignment, {
         where: { desk: { id: deskId } },

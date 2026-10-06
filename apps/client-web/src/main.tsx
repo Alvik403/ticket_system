@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import Board from './Board.tsx'
 import Kiosk from './Kiosk.tsx'
+import { keepScreenAwake } from './wake-lock.ts'
 
 function pageFromPath(): 'kiosk' | 'board' | 'app' {
   const path = window.location.pathname.replace(/\/+$/, '')
@@ -12,6 +13,7 @@ function pageFromPath(): 'kiosk' | 'board' | 'app' {
 }
 
 const page = pageFromPath()
+if (page === 'kiosk' || page === 'board') keepScreenAwake()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
