@@ -37,17 +37,27 @@ describe('ticket presentation', () => {
       end: new Date('2026-10-01T00:00:00.000Z'),
     };
     expect(
-      kanbanColumnFor('ASSIGNED', 'booking', new Date('2026-09-30T08:00:00Z')),
+      kanbanColumnFor('ASSIGNED', 'booking', new Date('2026-09-30T08:00:00Z'), undefined, Date.parse('2026-09-30T08:30:00Z')),
     ).toBe('approach');
-    expect(kanbanColumnFor('ASSIGNED', 'walkIn', null)).toBe('queue');
+    expect(kanbanColumnFor('ASSIGNED', 'walkIn', null)).toBe(null);
     expect(
       kanbanColumnFor(
         'BOOKED',
         'booking',
         new Date('2026-09-30T08:00:00Z'),
         day,
+        Date.parse('2026-09-30T08:30:00Z'),
       ),
     ).toBe('booked');
+    expect(
+      kanbanColumnFor(
+        'BOOKED',
+        'booking',
+        new Date('2026-09-30T08:00:00Z'),
+        day,
+        Date.parse('2026-09-30T09:00:00Z'),
+      ),
+    ).toBe(null);
     expect(kanbanColumnFor('CALLED', 'walkIn', null)).toBe('approach');
   });
 
@@ -66,24 +76,23 @@ describe('ticket presentation', () => {
     ).toBe(true);
   });
 
-  it('offers only call, processing, queue return, and no-show actions', () => {
-    const queue = managerStatusPickerOptions('walkIn', 'CHECKED_IN').filter(
+  it('offers call and complete actions', () => {
+    const waiting = managerStatusPickerOptions('booking', 'BOOKED').filter(
       (row) => !row.current,
     );
-    expect(queue.map((row) => row.label)).toEqual(['Вызов', 'Не явился']);
+    expect(waiting.map((row) => row.label)).toEqual([
+      'Вызов клиента',
+      'Завершить',
+    ]);
 
     const called = managerStatusPickerOptions('walkIn', 'CALLED').filter(
       (row) => !row.current,
     );
-    expect(called.map((row) => row.label)).toEqual([
-      'Обработка',
-      'Вернуть в очередь',
-      'Не явился',
-    ]);
+    expect(called.map((row) => row.label)).toEqual(['Завершить']);
 
     const service = managerStatusPickerOptions('walkIn', 'IN_SERVICE').filter(
       (row) => !row.current,
     );
-    expect(service.map((row) => row.label)).toEqual(['Готово']);
+    expect(service.map((row) => row.label)).toEqual(['Завершить']);
   });
 });

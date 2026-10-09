@@ -308,7 +308,7 @@ html, body, #root {
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   height: calc(100vh - 88px);
   height: calc(100dvh - 88px);
@@ -410,7 +410,7 @@ html, body, #root {
     height: auto;
     min-height: calc(100vh - 76px);
   }
-  .board-grid { grid-template-columns: 1fr 1fr; }
+  .board-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 @media (max-width: 720px) {

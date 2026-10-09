@@ -96,7 +96,6 @@ export default function Board() {
 
   const columns = board?.columns ?? [
     { id: 'booked', title: 'Запись', showDesk: false, tickets: [] },
-    { id: 'queue', title: 'Очередь', showDesk: false, tickets: [] },
     { id: 'approach', title: 'Подойти', showDesk: true, tickets: [] },
     { id: 'service', title: 'Приём', showDesk: false, tickets: [] },
   ]

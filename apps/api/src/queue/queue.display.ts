@@ -1,7 +1,7 @@
 import type { ClientCountry, TicketStatus } from '../domain/entities';
 import { kanbanColumnFor, ticketKind, type TicketKind } from './ticket-presentation';
 
-export type BoardColumnId = 'booked' | 'queue' | 'approach' | 'service';
+export type BoardColumnId = 'booked' | 'approach' | 'service';
 
 export const BOARD_COLUMNS: Array<{
   id: BoardColumnId;
@@ -9,12 +9,7 @@ export const BOARD_COLUMNS: Array<{
   statuses: TicketStatus[];
 }> = [
   { id: 'booked', title: 'Запись', statuses: ['BOOKED'] },
-  {
-    id: 'queue',
-    title: 'Очередь',
-    statuses: ['WAITING', 'CHECKED_IN', 'REQUEUED', 'ASSIGNED'],
-  },
-  { id: 'approach', title: 'Подойти', statuses: ['CALLED'] },
+  { id: 'approach', title: 'Подойти', statuses: ['CALLED', 'ASSIGNED'] },
   { id: 'service', title: 'Приём', statuses: ['IN_SERVICE'] },
 ];
 
@@ -95,6 +90,7 @@ export type BoardTicketSource = {
 export function buildPublicBoardColumns(
   tickets: BoardTicketSource[],
   day?: { start: Date; end: Date },
+  now = Date.now(),
 ): PublicBoardColumn[] {
   const grouped = new Map<BoardColumnId, BoardTicketSource[]>(
     BOARD_COLUMNS.map((column) => [column.id, []]),
@@ -106,6 +102,7 @@ export function buildPublicBoardColumns(
       kind,
       ticket.scheduledAt ?? null,
       day,
+      now,
     );
     if (!columnId) continue;
     grouped.get(columnId)?.push(ticket);

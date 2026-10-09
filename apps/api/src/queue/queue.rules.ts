@@ -74,3 +74,22 @@ export function checkInWindowExpired(
   if (!scheduledAt) return false;
   return now > scheduledAt.getTime() + durationMinutes * 60_000;
 }
+
+/** Через час после начала слота запись без вызова считается неявкой. */
+export const NO_SHOW_GRACE_MS = 60 * 60_000;
+
+export const AUTO_NO_SHOW_STATUSES: TicketStatus[] = [
+  'BOOKED',
+  'WAITING',
+  'CHECKED_IN',
+  'REQUEUED',
+  'ASSIGNED',
+];
+
+export function appointmentMissed(
+  scheduledAt: Date | undefined | null,
+  now = Date.now(),
+): boolean {
+  if (!scheduledAt) return false;
+  return now >= scheduledAt.getTime() + NO_SHOW_GRACE_MS;
+}

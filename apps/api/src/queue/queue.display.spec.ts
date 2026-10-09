@@ -33,7 +33,7 @@ describe('queue display helpers', () => {
 
   it('maps live statuses onto board columns', () => {
     expect(boardColumnFor('BOOKED')).toBe('booked');
-    expect(boardColumnFor('CHECKED_IN')).toBe('queue');
+    expect(boardColumnFor('CHECKED_IN')).toBe(null);
     expect(boardColumnFor('CALLED')).toBe('approach');
     expect(boardColumnFor('IN_SERVICE')).toBe('service');
     expect(boardColumnFor('COMPLETED')).toBe(null);
@@ -42,6 +42,7 @@ describe('queue display helpers', () => {
   it('builds a kanban and shows the desk only in the approach column', () => {
     const dayStart = new Date('2026-09-29T00:00:00.000Z');
     const dayEnd = new Date('2026-09-30T00:00:00.000Z');
+    const now = new Date('2026-09-29T08:30:00.000Z').getTime();
     const columns = buildPublicBoardColumns(
       [
         {
@@ -50,6 +51,13 @@ describe('queue display helpers', () => {
           fullName: 'Петров Пётр',
           country: 'RF',
           scheduledAt: new Date('2026-09-29T08:00:00.000Z'),
+        },
+        {
+          number: 'MAIN-098',
+          status: 'BOOKED',
+          fullName: 'Опоздавший',
+          country: 'RF',
+          scheduledAt: new Date('2026-09-29T07:00:00.000Z'),
         },
         {
           number: 'MAIN-099',
@@ -74,6 +82,7 @@ describe('queue display helpers', () => {
         },
       ],
       { start: dayStart, end: dayEnd },
+      now,
     );
 
     expect(columns.find((column) => column.id === 'booked')?.tickets).toEqual([
@@ -86,11 +95,9 @@ describe('queue display helpers', () => {
         kind: 'booking',
       },
     ]);
-    expect(columns.find((column) => column.id === 'queue')?.tickets[0]).toMatchObject({
-      number: 'MAIN-002',
-      fullName: 'Сидоров Сидор',
-      countryLabel: 'Заграничная',
-    });
+    expect(columns.find((column) => column.id === 'queue')).toBeUndefined();
+    expect(columns.some((column) => column.tickets.some((ticket) => ticket.number === 'MAIN-002'))).toBe(false);
+    expect(columns.some((column) => column.tickets.some((ticket) => ticket.number === 'MAIN-098'))).toBe(false);
     expect(columns.find((column) => column.id === 'approach')?.tickets).toEqual([
       {
         number: 'MAIN-003',
@@ -118,14 +125,16 @@ describe('queue display helpers', () => {
         },
       ],
       { start: dayStart, end: dayEnd },
+      now,
     );
     expect(
       withAssignedBooking.find((column) => column.id === 'approach')?.tickets[0]
         ?.number,
     ).toBe('MAIN-010');
     expect(
-      withAssignedBooking.find((column) => column.id === 'queue')?.tickets[0]
-        ?.number,
-    ).toBe('MAIN-011');
+      withAssignedBooking.some((column) =>
+        column.tickets.some((ticket) => ticket.number === 'MAIN-011'),
+      ),
+    ).toBe(false);
   });
 });

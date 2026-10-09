@@ -1001,6 +1001,43 @@ button.secondary, .button.secondary { background: #e8f1fb; color: #1e518c; }
   background: #2563a8;
   border-color: #2563a8;
 }
+.status-actions button.status-action-complete {
+  background: #166534;
+  border-color: #166534;
+  color: #fff;
+}
+.status-actions button.status-action-complete:hover:not(:disabled) {
+  background: #15803d;
+  border-color: #15803d;
+}
+.manager-stats,
+.client-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.manager-stats div,
+.client-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #d7e3f2;
+}
+.manager-stats span,
+.client-stats span {
+  font-size: 13px;
+  color: #64748b;
+}
+.manager-stats strong,
+.client-stats strong {
+  font-size: 28px;
+  line-height: 1;
+  color: #0f2744;
+}
 .status-actions button.status-action-muted {
   background: #f8fafc;
   color: #475569;

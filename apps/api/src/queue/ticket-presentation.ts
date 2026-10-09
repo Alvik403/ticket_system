@@ -1,5 +1,6 @@
 import type { TicketStatus } from '../domain/entities';
 import type { BoardColumnId } from './queue.display';
+import { appointmentMissed, AUTO_NO_SHOW_STATUSES } from './queue.rules';
 
 export type TicketKind = 'booking' | 'walkIn';
 
@@ -144,8 +145,15 @@ export function kanbanColumnFor(
   kind: TicketKind,
   scheduledAt?: Date | null,
   day?: { start: Date; end: Date },
+  now = Date.now(),
 ): BoardColumnId | null {
   if (scheduledAt && day && !ticketOnBoardDay(scheduledAt, day)) {
+    return null;
+  }
+  if (
+    (AUTO_NO_SHOW_STATUSES as readonly string[]).includes(status) &&
+    appointmentMissed(scheduledAt, now)
+  ) {
     return null;
   }
   if (status === 'BOOKED') {
@@ -155,9 +163,8 @@ export function kanbanColumnFor(
   if (status === 'IN_SERVICE') return 'service';
   if (status === 'CALLED') return 'approach';
   if (status === 'ASSIGNED') {
-    return kind === 'booking' ? 'approach' : 'queue';
+    return kind === 'booking' ? 'approach' : null;
   }
-  if (['WAITING', 'CHECKED_IN', 'REQUEUED'].includes(status)) return 'queue';
   return null;
 }
 
@@ -179,9 +186,9 @@ export function managerActionLabel(
 ): string {
   if (to === 'IN_SERVICE') return 'Обработка';
   if (to === 'NO_SHOW') return 'Не явился';
-  if (to === 'COMPLETED') return 'Готово';
+  if (to === 'COMPLETED') return 'Завершить';
   if (to === 'REQUEUED') return 'Вернуть в очередь';
-  if (to === 'CALLED') return 'Вызов';
+  if (to === 'CALLED') return 'Вызов клиента';
   if (to === 'ASSIGNED' && kind === 'booking') return 'Вызов';
   if (to === 'CHECKED_IN' && ['BOOKED', 'WAITING'].includes(from)) {
     return 'Клиент пришёл';
@@ -197,29 +204,14 @@ export function managerNextStatuses(
   kind: TicketKind,
   from: TicketStatus,
 ): TicketStatus[] {
+  void kind;
   if (MANAGER_TERMINAL.includes(from)) return [];
-
-  if (kind === 'walkIn') {
-    const walkIn: Partial<Record<TicketStatus, TicketStatus[]>> = {
-      CHECKED_IN: ['CALLED', 'NO_SHOW'],
-      REQUEUED: ['CALLED', 'NO_SHOW'],
-      ASSIGNED: ['CALLED', 'REQUEUED', 'NO_SHOW'],
-      CALLED: ['IN_SERVICE', 'REQUEUED', 'NO_SHOW'],
-      IN_SERVICE: ['COMPLETED'],
-    };
-    return walkIn[from] ?? [];
+  const next: TicketStatus[] = [];
+  if (!['CALLED', 'ASSIGNED', 'IN_SERVICE'].includes(from)) {
+    next.push('CALLED');
   }
-
-  const booking: Partial<Record<TicketStatus, TicketStatus[]>> = {
-    BOOKED: ['CHECKED_IN', 'NO_SHOW'],
-    WAITING: ['CHECKED_IN', 'NO_SHOW'],
-    CHECKED_IN: ['ASSIGNED', 'NO_SHOW'],
-    REQUEUED: ['ASSIGNED', 'NO_SHOW'],
-    ASSIGNED: ['IN_SERVICE', 'REQUEUED', 'NO_SHOW'],
-    CALLED: ['IN_SERVICE', 'REQUEUED', 'NO_SHOW'],
-    IN_SERVICE: ['COMPLETED'],
-  };
-  return booking[from] ?? [];
+  next.push('COMPLETED');
+  return next;
 }
 
 export function validateManagerStatusChange(
@@ -230,11 +222,6 @@ export function validateManagerStatusChange(
   if (from === to) return null;
   if (MANAGER_TERMINAL.includes(from)) {
     return 'Талон уже закрыт — менять статус нельзя.';
-  }
-  if (MANAGER_TERMINAL.includes(to) && from === 'BOOKED') {
-    if (to === 'COMPLETED' || to === 'IN_SERVICE') {
-      return 'Сначала отметьте, что клиент явился.';
-    }
   }
   const allowed = managerNextStatuses(kind, from);
   if (!allowed.includes(to)) {

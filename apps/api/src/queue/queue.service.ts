@@ -14,6 +14,7 @@ import {
   EntityManager,
   In,
   IsNull,
+  LessThanOrEqual,
   Like,
   QueryFailedError,
   Not,
@@ -36,12 +37,14 @@ import {
 import type { SessionUser } from '../auth/auth';
 import { KeycloakAdminService } from '../auth/keycloak-admin.service';
 import {
+  AUTO_NO_SHOW_STATUSES,
   blocksBreak,
   canCancel,
   canCheckIn,
   canReleaseOnBreak,
   checkInWindowExpired,
   nextTicketStatus,
+  NO_SHOW_GRACE_MS,
   type AssignmentAction,
 } from './queue.rules';
 import { BookingService } from './booking.service';
@@ -76,6 +79,7 @@ import {
 export class QueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QueueService.name);
   private dispatchTimer?: NodeJS.Timeout;
+  private expireInFlight?: Promise<void>;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -129,6 +133,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
           AND label ~ '[0-9]+$'`,
     );
     this.dispatchTimer = setInterval(() => {
+      void this.expireMissedAppointments().catch((error: unknown) => {
+        this.logger.error('Missed appointment sweep failed', error);
+      });
       void this.dispatchAvailable().catch((error: unknown) => {
         this.logger.error('Queue dispatch failed', error);
       });
@@ -583,7 +590,81 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async expireMissedAppointments(): Promise<void> {
+    if (this.expireInFlight) return this.expireInFlight;
+    this.expireInFlight = this.markMissedAppointments().finally(() => {
+      this.expireInFlight = undefined;
+    });
+    return this.expireInFlight;
+  }
+
+  private async markMissedAppointments(): Promise<void> {
+    const deadline = new Date(Date.now() - NO_SHOW_GRACE_MS);
+    const due = await this.dataSource.getRepository(Ticket).find({
+      where: {
+        status: In([...AUTO_NO_SHOW_STATUSES]),
+        scheduledAt: LessThanOrEqual(deadline),
+      },
+      take: 100,
+    });
+    if (!due.length) return;
+    await this.dataSource.transaction(async (manager) => {
+      for (const row of due) {
+        const ticket = await manager.findOne(Ticket, {
+          where: { id: row.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (
+          !ticket?.scheduledAt ||
+          ticket.scheduledAt.getTime() > deadline.getTime() ||
+          !(AUTO_NO_SHOW_STATUSES as readonly string[]).includes(ticket.status)
+        ) {
+          continue;
+        }
+        const previous = ticket.status;
+        ticket.status = 'NO_SHOW';
+        await manager.save(ticket);
+        const assignments = await manager.find(Assignment, {
+          where: { ticket: { id: ticket.id }, active: true },
+          relations: { employee: true },
+        });
+        for (const assignment of assignments) {
+          assignment.active = false;
+          assignment.completedAt = new Date();
+          if (assignment.employee) {
+            assignment.employee.status = 'AVAILABLE';
+            await manager.save([assignment, assignment.employee]);
+          } else {
+            await manager.save(assignment);
+          }
+        }
+        await this.event(
+          manager,
+          ticket.id,
+          'NO_SHOW',
+          { auto: true, previous },
+          'system',
+        );
+        await this.audit(manager, 'system', 'TICKET_NO_SHOW', ticket.id, {
+          auto: true,
+          previous,
+        });
+      }
+    });
+  }
+
+  async clientStats() {
+    const tickets = this.dataSource.getRepository(Ticket);
+    const [total, completed, noShow] = await Promise.all([
+      tickets.count(),
+      tickets.count({ where: { status: 'COMPLETED' } }),
+      tickets.count({ where: { status: 'NO_SHOW' } }),
+    ]);
+    return { total, completed, noShow };
+  }
+
   async getPublicBoard(siteCode?: string, country?: ClientCountry) {
+    await this.expireMissedAppointments();
     const siteRepository = this.dataSource.getRepository(Site);
     const site = siteCode
       ? await siteRepository.findOne({
@@ -1063,6 +1144,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new BadRequestException('Некорректная дата');
     }
+    await this.expireMissedAppointments();
     const employee = await this.dataSource.getRepository(Employee).findOne({
       where: { oidcSubject: user.subject },
       relations: { site: true, desk: true },

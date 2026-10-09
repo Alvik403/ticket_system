@@ -474,6 +474,11 @@ export class AdminQueueController {
     return this.queue.listDesks();
   }
 
+  @Get('client-stats')
+  clientStats() {
+    return this.queue.clientStats();
+  }
+
   @Post('desks')
   createDesk(@Req() request: Request, @Body() body: CreateDeskDto) {
     return this.queue.createDesk(

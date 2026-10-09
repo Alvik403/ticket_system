@@ -1,4 +1,5 @@
 import {
+  appointmentMissed,
   canCancel,
   canCheckIn,
   canReleaseOnBreak,
@@ -65,6 +66,12 @@ describe('queue state rules', () => {
     );
     expect(canCheckIn('CHECKED_IN', scheduledAt, 10, scheduledAt.getTime())).toBe(false);
     expect(checkInWindowExpired(scheduledAt, 10, scheduledAt.getTime() + 10 * 60_000 + 1)).toBe(
+      true,
+    );
+    expect(appointmentMissed(scheduledAt, scheduledAt.getTime() + 60 * 60_000 - 1)).toBe(
+      false,
+    );
+    expect(appointmentMissed(scheduledAt, scheduledAt.getTime() + 60 * 60_000)).toBe(
       true,
     );
   });

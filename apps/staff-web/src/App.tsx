@@ -89,6 +89,8 @@ function isManagerInProgressRow(status: string) {
 }
 
 function statusActionClass(label: string) {
+  if (label === 'Завершить') return 'status-action-complete'
+  if (label === 'Вызов клиента') return 'status-action-primary'
   if (label === 'Не явился') return 'status-action-danger'
   if (label === 'Вернуть в очередь' || label === 'Клиент пришёл') {
     return 'status-action-muted'
@@ -173,6 +175,11 @@ function App() {
     temporaryPassword: string
     title: string
   } | null>(null)
+  const [clientStats, setClientStats] = useState<{
+    total: number
+    completed: number
+    noShow: number
+  } | null>(null)
 
   useEffect(() => {
     api('/auth/me')
@@ -235,6 +242,24 @@ function App() {
         setBookings([])
       })
       .finally(() => setBookingsLoading(false))
+    const timer = window.setInterval(() => {
+      void api(`/employee/bookings?date=${selectedDate}`)
+        .then(async (response) => {
+          if (!response.ok) return
+          const payload = (await response.json()) as
+            | BookingRow[]
+            | { managerCountry?: 'RF' | 'CN' | null; bookings?: BookingRow[] }
+          if (Array.isArray(payload)) {
+            setManagerCountry(null)
+            setBookings(payload)
+            return
+          }
+          setManagerCountry(payload.managerCountry ?? null)
+          setBookings(payload.bookings ?? [])
+        })
+        .catch(() => undefined)
+    }, 20_000)
+    return () => window.clearInterval(timer)
   }, [user, selectedDate, showSidebar])
 
   async function reloadBookings() {
@@ -286,6 +311,24 @@ function App() {
     if (!isAdmin || (view !== 'desks' && view !== 'managers')) return
     void reloadAdminData()
   }, [view, isAdmin])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    let cancelled = false
+    async function loadStats() {
+      const response = await api('/admin/client-stats')
+      if (!response.ok || cancelled) return
+      setClientStats(await response.json())
+    }
+    void loadStats().catch(() => undefined)
+    const timer = window.setInterval(() => {
+      void loadStats().catch(() => undefined)
+    }, 20_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [isAdmin])
 
   async function reloadAdminData() {
     setError('')
@@ -543,6 +586,15 @@ function App() {
     return bookings.filter((row) => row.status === statusFilter)
   }, [bookings, statusFilter])
 
+  const managerStats = useMemo(
+    () => ({
+      booked: bookings.length,
+      completed: bookings.filter((row) => row.status === 'COMPLETED').length,
+      noShow: bookings.filter((row) => row.status === 'NO_SHOW').length,
+    }),
+    [bookings],
+  )
+
   if (!user) return <main className="loading">Переход к форме входа…</main>
 
   const selectedBooking =
@@ -597,6 +649,22 @@ function App() {
         )}
 
         <main>
+          {isAdmin && showSidebar && clientStats && (
+            <section className="client-stats" aria-label="Статистика клиентов">
+              <div>
+                <span>Всего клиентов</span>
+                <strong>{clientStats.total}</strong>
+              </div>
+              <div>
+                <span>Обработано</span>
+                <strong>{clientStats.completed}</strong>
+              </div>
+              <div>
+                <span>Не явилось</span>
+                <strong>{clientStats.noShow}</strong>
+              </div>
+            </section>
+          )}
           {view === 'work' && !showSidebar && (
             <div className="work-screen manager-schedule">
               <header className="page-header page-header-compact">
@@ -636,6 +704,21 @@ function App() {
                   </label>
                 </div>
               </header>
+
+              <section className="manager-stats" aria-label="Сводка за день">
+                <div>
+                  <span>Записано</span>
+                  <strong>{managerStats.booked}</strong>
+                </div>
+                <div>
+                  <span>Обработано</span>
+                  <strong>{managerStats.completed}</strong>
+                </div>
+                <div>
+                  <span>Не явилось</span>
+                  <strong>{managerStats.noShow}</strong>
+                </div>
+              </section>
 
               <div className="manager-layout">
                 <section className="manager-bookings-panel">
