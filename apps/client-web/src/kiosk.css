@@ -156,12 +156,47 @@ html, body, #root {
   line-height: 1.35;
 }
 
+.kiosk-walkin:has(.kiosk-form) {
+  align-items: stretch;
+  overflow: hidden;
+}
+
 .kiosk-form {
   width: min(100%, 640px);
   max-height: 100%;
+  margin: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kiosk-form-scroll {
   overflow: auto;
+  min-height: 0;
   display: grid;
   gap: 16px;
+  align-content: start;
+}
+
+.kiosk-form-error {
+  flex: 0 0 auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+
+.kiosk-form-error.is-empty {
+  visibility: hidden;
+}
+
+.kiosk-form-error:not(.is-empty) {
+  border-color: #c98181;
+  background: #fff2f2;
+  color: #7a2424;
 }
 
 .kiosk-form h1 {

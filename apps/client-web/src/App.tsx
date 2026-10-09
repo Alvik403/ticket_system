@@ -898,6 +898,9 @@ function App() {
                     Сайт
                     <input tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
                   </label>
+                  <p className={`form-alert${error ? '' : ' is-empty'}`} role="alert">
+                    {error}
+                  </p>
                   <div className="step-actions">
                     <button className="secondary" onClick={() => setStep(2)}>Назад</button>
                     <button type="button" onClick={continueToConfirm}>Далее</button>
@@ -921,6 +924,9 @@ function App() {
                     <div><dt>Дата выезда</dt><dd>{departureDate || '—'}</dd></div>
                     <div><dt>Дата приезда</dt><dd>{arrivalDate || '—'}</dd></div>
                   </dl>
+                  <p className={`form-alert${error ? '' : ' is-empty'}`} role="alert">
+                    {error}
+                  </p>
                   <div className="step-actions">
                     <button className="secondary" onClick={() => setStep(3)}>Назад</button>
                     <button onClick={() => void createTicket()}>Получить талон</button>
@@ -977,7 +983,9 @@ function App() {
           <div className="notice-banner floating-notice">{ticket.clientNotice}</div>
         )}
 
-        {error && <div className="error" role="alert">{error}</div>}
+        {error && !(tab === 'book' && (step === 3 || step === 4)) && (
+          <div className="error" role="alert">{error}</div>
+        )}
       </main>
     </div>
   )

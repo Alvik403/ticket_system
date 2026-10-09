@@ -302,6 +302,7 @@ export default function Kiosk() {
             </div>
           ) : formOpen ? (
             <form className="kiosk-form" onSubmit={(event) => void issueTicket(event)}>
+              <div className="kiosk-form-scroll">
               <h1>Очередь на сегодня</h1>
               <p className="kiosk-form-lead">
                 Выберите свободное время и укажите телефон — подойдите к этому слоту.
@@ -403,11 +404,13 @@ export default function Kiosk() {
                   onChange={(event) => setHoneypot(event.target.value)}
                 />
               </label>
-              {error && (
-                <p className="error" role="alert">
-                  {error}
-                </p>
-              )}
+              </div>
+              <p
+                className={`kiosk-form-error${error ? '' : ' is-empty'}`}
+                role="alert"
+              >
+                {error}
+              </p>
               <div className="kiosk-form-actions">
                 <button
                   type="button"

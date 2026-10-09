@@ -376,6 +376,22 @@ textarea { min-height: 120px; resize: vertical; }
 }
 .slot.unavailable:hover { background: #f1f5f9; }
 
+.form-alert {
+  min-height: 46px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-weight: 700;
+}
+.form-alert.is-empty {
+  visibility: hidden;
+}
+.form-alert:not(.is-empty) {
+  border-color: #c98181;
+  background: #fff2f2;
+  color: #7a2424;
+}
 .step-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
