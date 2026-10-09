@@ -74,7 +74,7 @@ if [[ -z "$PUBLIC_ORIGIN" || "$PUBLIC_ORIGIN" == "https://queue.example.ru" ]] |
     echo "Не удалось определить публичный IPv4 сервера. Задайте PUBLIC_ORIGIN вручную." >&2
     exit 1
   }
-  PUBLIC_ORIGIN="https://${detected_ip}"
+  PUBLIC_ORIGIN="http://${detected_ip}"
   echo "PUBLIC_ORIGIN=${PUBLIC_ORIGIN}"
 else
   if [[ ! "$PUBLIC_ORIGIN" =~ ^https://[^/]+$ ]]; then
@@ -95,7 +95,12 @@ CLIENT_ORIGIN="${PUBLIC_ORIGIN}"
 STAFF_ORIGIN="${PUBLIC_ORIGIN}"
 
 export PUBLIC_ORIGIN OIDC_ISSUER OIDC_CALLBACK_URL STAFF_APP_URL CLIENT_ORIGIN STAFF_ORIGIN
-export COOKIE_SECURE=true ALLOW_LOCALHOST_CORS=false
+if [[ "$PUBLIC_ORIGIN" == https://* ]]; then
+  export COOKIE_SECURE=true
+else
+  export COOKIE_SECURE=false
+fi
+export ALLOW_LOCALHOST_CORS=false
 
 cert_dir=infra/certs
 mkdir -p "$cert_dir"
