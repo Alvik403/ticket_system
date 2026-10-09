@@ -1,7 +1,7 @@
 import type { ClientCountry, TicketStatus } from '../domain/entities';
 import { kanbanColumnFor, ticketKind, type TicketKind } from './ticket-presentation';
 
-export type BoardColumnId = 'booked' | 'approach' | 'service';
+export type BoardColumnId = 'booked' | 'approach';
 
 export const BOARD_COLUMNS: Array<{
   id: BoardColumnId;
@@ -9,8 +9,11 @@ export const BOARD_COLUMNS: Array<{
   statuses: TicketStatus[];
 }> = [
   { id: 'booked', title: 'Запись', statuses: ['BOOKED'] },
-  { id: 'approach', title: 'Подойти', statuses: ['CALLED', 'ASSIGNED'] },
-  { id: 'service', title: 'Приём', statuses: ['IN_SERVICE'] },
+  {
+    id: 'approach',
+    title: 'Подойти',
+    statuses: ['CALLED', 'ASSIGNED', 'IN_SERVICE'],
+  },
 ];
 
 export function lastNameFromFullName(fullName?: string | null): string {

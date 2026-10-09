@@ -35,7 +35,7 @@ describe('queue display helpers', () => {
     expect(boardColumnFor('BOOKED')).toBe('booked');
     expect(boardColumnFor('CHECKED_IN')).toBe(null);
     expect(boardColumnFor('CALLED')).toBe('approach');
-    expect(boardColumnFor('IN_SERVICE')).toBe('service');
+    expect(boardColumnFor('IN_SERVICE')).toBe('approach');
     expect(boardColumnFor('COMPLETED')).toBe(null);
   });
 

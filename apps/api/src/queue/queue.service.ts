@@ -132,6 +132,13 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         WHERE "displayNumber" IS NULL
           AND label ~ '[0-9]+$'`,
     );
+    await this.dataSource.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "one_active_slot_per_desk_time"
+         ON "ticket" ("reservedDeskId", "scheduledAt")
+       WHERE "reservedDeskId" IS NOT NULL
+         AND "scheduledAt" IS NOT NULL
+         AND "status" IN ('BOOKED','WAITING','CHECKED_IN','ASSIGNED','CALLED','IN_SERVICE','REQUEUED')`,
+    );
     this.dispatchTimer = setInterval(() => {
       void this.expireMissedAppointments().catch((error: unknown) => {
         this.logger.error('Missed appointment sweep failed', error);
@@ -187,18 +194,28 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       };
     }
     const durationMinutes = this.booking.durationFor(country);
-    await this.booking.assertSlotAvailable(
-      siteId,
-      scheduledAt,
-      durationMinutes,
-      country,
-    );
-    const desk = await this.booking.reserveDesk(
-      siteId,
-      country,
-      scheduledAt,
-      durationMinutes,
-    );
+    const desk = await this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        siteId,
+      ]);
+      await this.booking.assertSlotAvailable(
+        siteId,
+        scheduledAt,
+        durationMinutes,
+        country,
+        undefined,
+        manager,
+      );
+      return this.booking.reserveDesk(
+        siteId,
+        country,
+        scheduledAt,
+        durationMinutes,
+        undefined,
+        undefined,
+        manager,
+      );
+    });
     const holdId = randomBytes(8).toString('hex');
     const held = await this.rateLimit.holdSlot(
       sessionId,
@@ -379,6 +396,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         scheduledAt,
         durationMinutes,
         input.country,
+        undefined,
+        manager,
       );
       await this.assertPhoneSlotFree(manager, person.phone, scheduledAt);
       const reservedDesk = await this.booking.reserveDesk(
@@ -388,6 +407,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         durationMinutes,
         undefined,
         hold.deskId,
+        manager,
       );
 
       const count = await manager
@@ -535,6 +555,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         scheduledAt,
         durationMinutes,
         input.country,
+        undefined,
+        manager,
       );
       await this.assertPhoneSlotFree(manager, person.phone, scheduledAt);
       const reservedDesk = await this.booking.reserveDesk(
@@ -542,6 +564,9 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         input.country,
         scheduledAt,
         durationMinutes,
+        undefined,
+        undefined,
+        manager,
       );
 
       const count = await manager
@@ -914,6 +939,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         ticket.durationMinutes,
         ticket.country,
         ticket.id,
+        manager,
       );
       const reservedDesk = await this.booking.reserveDesk(
         ticket.site.id,
@@ -921,6 +947,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         scheduledAt,
         ticket.durationMinutes,
         ticket.id,
+        undefined,
+        manager,
       );
       const previous = ticket.scheduledAt.toISOString();
       ticket.scheduledAt = scheduledAt;

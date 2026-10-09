@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { DataSource, In, Not, Raw } from 'typeorm';
+import { DataSource, EntityManager, In, Not, Raw } from 'typeorm';
 import { SLOT_HOLDING_STATUSES } from '../domain/entities';
 import { zonedDateTime } from '../timezone';
 import { RateLimitService } from './rate-limit.service';
@@ -42,14 +42,16 @@ export class BookingService {
     return SLOT_DURATION[country];
   }
 
-  /** Календарь записи: сегодня и следующие календарные дни (по Москве) */
+  /** Сегодня и ещё два ближайших рабочих дня. Суббота и воскресенье пропускаются. */
   getAvailableDates(count = 3): string[] {
     const dates: string[] = [];
     const base = this.slotToDate(this.formatDate(new Date()), '12:00');
-    for (let offset = 0; offset < count; offset += 1) {
+    for (let offset = 0; dates.length < count && offset < 21; offset += 1) {
       const cursor = new Date(base);
       cursor.setDate(cursor.getDate() + offset);
-      dates.push(this.formatDate(cursor));
+      const key = this.formatDate(cursor);
+      if (this.isWeekend(key)) continue;
+      dates.push(key);
     }
     return dates;
   }
@@ -92,7 +94,7 @@ export class BookingService {
     country: ClientCountry,
     excludeTicketId?: string,
   ) {
-    this.assertWeekday(date);
+    if (this.isWeekend(date)) return [];
     const site = await this.dataSource.getRepository(Site).findOneBy({
       id: siteId,
       active: true,
@@ -132,7 +134,6 @@ export class BookingService {
       const busy = new Set<string>();
       for (const ticket of tickets) {
         if (!ticket.scheduledAt || !ticket.reservedDesk?.id) continue;
-        if (this.formatDate(ticket.scheduledAt) !== date) continue;
         const tStart = ticket.scheduledAt.getTime();
         const tEnd = tStart + ticket.durationMinutes * 60_000;
         if (startMs < tEnd && endMs > tStart) busy.add(ticket.reservedDesk.id);
@@ -173,6 +174,8 @@ export class BookingService {
     country: ClientCountry,
 
     excludeTicketId?: string,
+
+    manager?: EntityManager,
   ): Promise<void> {
     const date = this.formatDate(scheduledAt);
 
@@ -202,6 +205,10 @@ export class BookingService {
       country,
 
       excludeTicketId,
+
+      undefined,
+
+      manager,
     );
 
     if (!free) {
@@ -223,8 +230,17 @@ export class BookingService {
     excludeTicketId?: string,
 
     preferredDeskId?: string,
+
+    manager?: EntityManager,
   ): Promise<Desk> {
-    const desks = await this.dataSource.getRepository(Desk).find({
+    const db = manager ?? this.dataSource.manager;
+    if (manager) {
+      await manager.query(
+        `SELECT id FROM desk WHERE "siteId" = $1 AND active = true AND country = $2 ORDER BY label FOR UPDATE`,
+        [siteId, country],
+      );
+    }
+    const desks = await db.getRepository(Desk).find({
       where: { site: { id: siteId }, active: true, country },
 
       order: { label: 'ASC' },
@@ -252,6 +268,8 @@ export class BookingService {
       endMs,
 
       excludeTicketId,
+
+      manager,
     );
 
     const blockedDeskIds = await this.blockedDeskIds(
@@ -262,6 +280,8 @@ export class BookingService {
       startMs,
 
       endMs,
+
+      manager,
     );
 
     const freeDesks = desks.filter(
@@ -293,6 +313,8 @@ export class BookingService {
     excludeTicketId?: string,
 
     date?: string,
+
+    manager?: EntityManager,
   ): Promise<boolean> {
     const startMs = scheduledAt.getTime();
 
@@ -300,9 +322,11 @@ export class BookingService {
 
     const slotDate = date ?? this.formatDate(scheduledAt);
 
-    const desks = await this.dataSource.getRepository(Desk).find({
-      where: { site: { id: siteId }, active: true, country },
-    });
+    const desks = await (manager ?? this.dataSource.manager)
+      .getRepository(Desk)
+      .find({
+        where: { site: { id: siteId }, active: true, country },
+      });
 
     if (!desks.length) return false;
 
@@ -318,6 +342,8 @@ export class BookingService {
       endMs,
 
       excludeTicketId,
+
+      manager,
     );
 
     const blockedDeskIds = await this.blockedDeskIds(
@@ -328,6 +354,8 @@ export class BookingService {
       startMs,
 
       endMs,
+
+      manager,
     );
 
     return desks.some(
@@ -587,41 +615,41 @@ export class BookingService {
     endMs: number,
 
     excludeTicketId?: string,
+
+    manager?: EntityManager,
   ): Promise<Set<string>> {
-    const tickets = await this.dataSource.getRepository(Ticket).find({
-      where: {
-        site: { id: siteId },
-
+    const db = manager ?? this.dataSource.manager;
+    const rows = await db.query(
+      `SELECT t."reservedDeskId" AS id
+         FROM ticket t
+        WHERE t."siteId" = $1
+          AND t.country = $2
+          AND t.status = ANY($3::text[])
+          AND t."scheduledAt" IS NOT NULL
+          AND t."reservedDeskId" IS NOT NULL
+          AND ($4::uuid IS NULL OR t.id <> $4::uuid)
+          AND t."scheduledAt" < $6
+          AND t."scheduledAt" + (t."durationMinutes" * interval '1 minute') > $5`,
+      [
+        siteId,
         country,
-
-        status: In([...ACTIVE_SLOT_STATUSES]),
-
-        ...(excludeTicketId ? { id: Not(excludeTicketId) } : {}),
-      },
-
-      relations: { reservedDesk: true },
-    });
-
-    const busy = new Set<string>();
-
-    for (const ticket of tickets) {
-      if (!ticket.scheduledAt || !ticket.reservedDesk?.id) continue;
-
-      if (this.formatDate(ticket.scheduledAt) !== slotDate) continue;
-
-      const tStart = ticket.scheduledAt.getTime();
-
-      const tEnd = tStart + ticket.durationMinutes * 60_000;
-
-      if (startMs < tEnd && endMs > tStart) {
-        busy.add(ticket.reservedDesk.id);
-      }
-    }
-
-    for (const deskId of await this.rateLimit.heldDeskIds(startMs, endMs, 20)) {
+        [...ACTIVE_SLOT_STATUSES],
+        excludeTicketId ?? null,
+        new Date(startMs),
+        new Date(endMs),
+      ],
+    );
+    const busy = new Set<string>(
+      rows.map((row: { id: string }) => row.id).filter(Boolean),
+    );
+    const durationMinutes = Math.max(1, Math.round((endMs - startMs) / 60_000));
+    for (const deskId of await this.rateLimit.heldDeskIds(
+      startMs,
+      endMs,
+      durationMinutes,
+    )) {
       busy.add(deskId);
     }
-
     return busy;
   }
 
@@ -633,8 +661,12 @@ export class BookingService {
     startMs: number,
 
     endMs: number,
+
+    manager?: EntityManager,
   ): Promise<Set<string>> {
-    const blocks = await this.dataSource.getRepository(BlockedSlot).find({
+    const blocks = await (manager ?? this.dataSource.manager)
+      .getRepository(BlockedSlot)
+      .find({
       where: { site: { id: siteId }, date: slotDate },
 
       relations: { employee: { desk: true } },
@@ -657,10 +689,13 @@ export class BookingService {
     return blocked;
   }
 
-  private assertWeekday(date: string): void {
+  private isWeekend(date: string): boolean {
     const day = this.slotToDate(date, '12:00').getDay();
+    return day === 0 || day === 6;
+  }
 
-    if (day === 0 || day === 6) {
+  private assertWeekday(date: string): void {
+    if (this.isWeekend(date)) {
       throw new BadRequestException('Запись доступна только в рабочие дни');
     }
   }

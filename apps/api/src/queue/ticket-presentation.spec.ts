@@ -80,10 +80,7 @@ describe('ticket presentation', () => {
     const waiting = managerStatusPickerOptions('booking', 'BOOKED').filter(
       (row) => !row.current,
     );
-    expect(waiting.map((row) => row.label)).toEqual([
-      'Вызов клиента',
-      'Завершить',
-    ]);
+    expect(waiting.map((row) => row.label)).toEqual(['Вызов клиента']);
 
     const called = managerStatusPickerOptions('walkIn', 'CALLED').filter(
       (row) => !row.current,

@@ -160,8 +160,7 @@ export function kanbanColumnFor(
     if (kind !== 'booking' || !scheduledAt || !day) return null;
     return 'booked';
   }
-  if (status === 'IN_SERVICE') return 'service';
-  if (status === 'CALLED') return 'approach';
+  if (status === 'IN_SERVICE' || status === 'CALLED') return 'approach';
   if (status === 'ASSIGNED') {
     return kind === 'booking' ? 'approach' : null;
   }
@@ -206,12 +205,10 @@ export function managerNextStatuses(
 ): TicketStatus[] {
   void kind;
   if (MANAGER_TERMINAL.includes(from)) return [];
-  const next: TicketStatus[] = [];
-  if (!['CALLED', 'ASSIGNED', 'IN_SERVICE'].includes(from)) {
-    next.push('CALLED');
+  if (['CALLED', 'ASSIGNED', 'IN_SERVICE'].includes(from)) {
+    return ['COMPLETED'];
   }
-  next.push('COMPLETED');
-  return next;
+  return ['CALLED'];
 }
 
 export function validateManagerStatusChange(
